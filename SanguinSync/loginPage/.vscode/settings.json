@@ -1,7 +1,0 @@
-{
-    "code-runner.executorMap": {
-        "cpp": "cd $workspaceRoot && g++ Index.cpp LogInPage.cpp RegisterUser.cpp RegisterHospital.cpp UserLogIn.cpp UserMenu.cpp HospLogIn.cpp HospMenu.cpp -o Index.exe && .\\Index.exe"
-    },
-    "code-runner.runInTerminal": true,
-    "code-runner.fileDirectoryAsCwd": false
-}
