@@ -1,5 +1,6 @@
-Blood Donation Drive Apollo,15/04/2024,Apollo Hospital Delhi,Delhi
+BDD Apollo,15/04/2024,Apollo Delhi,Delhi
 Fortis Mega Camp,20/04/2024,Fortis Hospital,Mumbai
 Chennai Blood Camp,25/04/2024,Max Healthcare,Chennai
 Bangalore Donation Drive,10/05/2024,Narayana Health,Bangalore
 Gurgaon Medical Camp,05/05/2024,Medanta Hospital,Gurgaon
+BDC,23/04/2026,WCE,Sangli

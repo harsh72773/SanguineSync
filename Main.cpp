@@ -1599,9 +1599,8 @@ public:
             cout << "2. Show My Requests" << endl;
             cout << "3. View Completed Requests" << endl;
             cout << "4. View Blood Camps" << endl;
-            cout << "5. View Inventory" << endl;
-            cout << "6. Exit" << endl;
-            cout << "Select an option (1-6): ";
+            cout << "5. Exit" << endl;
+            cout << "Select an option (1-5): ";
             int choice = Utils::readIntLine();
             cout << endl;
 
@@ -1624,17 +1623,12 @@ public:
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 5:
-                Inventory::display();
-                cout << "Press Enter to return to the User Menu..." << endl;
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                break;
-            case 6:
                 CurrentUser::clear();
                 cout << "Returning to main page..." << endl;
                 indexMain();
                 return;
             default:
-                cout << "Invalid choice. Please select 1, 2, 3, 4, 5, or 6." << endl
+                cout << "Invalid choice. Please select 1, 2, 3, 4, or 5." << endl
                      << endl;
                 break;
             }

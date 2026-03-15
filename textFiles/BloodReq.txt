@@ -9,7 +9,7 @@ Username: Priya Patel
 Aadhaar No: 234567890123
 Blood Group: B+
 Units Required: 1
-Status: pending
+Status: completed
 ---
 Username: Amit Kumar
 Aadhaar No: 345678901234
@@ -27,4 +27,10 @@ Username: Vikram Singh
 Aadhaar No: 567890123456
 Blood Group: O-
 Units Required: 1
+Status: pending
+---
+Username: Harshwardhan
+Aadhaar No: 123456789008
+Blood Group: O+
+Units Required: 3
 Status: pending
