@@ -1,3 +1,32 @@
+//
+// ============================================================================
+//  SANGUINE SYNC - Blood Bank Management System
+//  OOP Design: All four pillars are used throughout this file.
+//
+//  PILLAR SUMMARY
+//  --------------
+//  1. ENCAPSULATION  - Every class hides its data as private/protected and
+//                      exposes only what callers need through public methods.
+//
+//  2. ABSTRACTION    - Complex logic (file I/O, validation, parsing) is hidden
+//                      behind clean, single-purpose method names. Callers never
+//                      deal with raw implementation details.
+//
+//  3. INHERITANCE    - Account  <-- User
+//                      Account  <-- Hospital
+//                      IRecord  <-- BloodReqRecord
+//                      IRecord  <-- Donor
+//                      IRecord  <-- Camp
+//                      IManager <-- DonorManager
+//                      IManager <-- CampManager
+//                      IManager <-- BloodRequestManager
+//
+//  4. POLYMORPHISM   - IRecord::printRow()  overridden by each record class
+//                      IRecord::toCSV()     overridden by each record class
+//                      IManager::showMenu() overridden by each manager class
+//                      Runtime dispatch used in displayRecords<T>() helper.
+// ============================================================================
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -9,16 +38,22 @@
 #include <limits>
 #include <iomanip>
 #include <cstring>
+#include <chrono>
+#include <ctime>
+#include <cmath>
+#include <sstream>
 
 using namespace std;
 
-// =============================================================================
-// UTILITY CLASS - Static helper methods (Abstraction & Reusability)
-// =============================================================================
+// ============================================================================
+// UTILS CLASS
+// ABSTRACTION: Wraps all low-level string helpers so no other class ever
+//              duplicates this logic or exposes raw implementation.
+// ============================================================================
 class Utils
 {
 public:
-    // Trim whitespace from both ends of a string
+    // ABSTRACTION: caller never sees the loop; just calls trim()
     static string trim(const string &s)
     {
         size_t start = 0;
@@ -30,7 +65,7 @@ public:
         return s.substr(start, end - start);
     }
 
-    // Convert string to uppercase
+    // ABSTRACTION: transform complexity hidden behind one word
     static string toUpper(const string &s)
     {
         string out = s;
@@ -40,7 +75,7 @@ public:
         return out;
     }
 
-    // Regex match helper
+    // ABSTRACTION: try/catch around regex hidden; callers get a plain bool
     static bool regexMatch(const string &value, const string &pattern)
     {
         try
@@ -53,7 +88,7 @@ public:
         }
     }
 
-    // Read an integer from a line of stdin
+    // ABSTRACTION: getline + stoi + error handling hidden; callers get an int
     static int readIntLine()
     {
         string line;
@@ -69,13 +104,13 @@ public:
         }
     }
 
-    // Validate DD/MM/YYYY date format
+    // ABSTRACTION: regex detail hidden; callers just check bool
     static bool isValidDate(const string &date)
     {
         return regexMatch(date, "^\\d{2}/\\d{2}/\\d{4}$");
     }
 
-    // Split a CSV line into at most (maxFields) parts
+    // ABSTRACTION: manual find-and-slice loop hidden; callers get vector<string>
     static vector<string> splitCSV(const string &line, int maxFields)
     {
         vector<string> parts;
@@ -94,49 +129,433 @@ public:
     }
 };
 
-// =============================================================================
-// USER CLASS - Encapsulation & Abstraction
-// =============================================================================
-class User
+// ============================================================================
+// DATE UTILS CLASS - Date/Time Operations and Blood Expiry Management
+//
+// ENCAPSULATION: All date/time logic is hidden inside static methods
+// ABSTRACTION: Complex date calculations are hidden behind simple method calls
+// ============================================================================
+class DateUtils
+{
+public:
+    // ABSTRACTION: Current date retrieval hidden behind simple method call
+    static string getCurrentDate()
+    {
+        auto now = chrono::system_clock::now();
+        auto time_t_val = chrono::system_clock::to_time_t(now);
+        tm tm_local;
+
+        // Use standard localtime for cross-platform compatibility
+        tm_local = *localtime(&time_t_val);
+
+        char buffer[11];
+        strftime(buffer, sizeof(buffer), "%d/%m/%Y", &tm_local);
+        return string(buffer);
+    }
+
+    // ABSTRACTION: Date addition logic hidden - just call addDays()
+    static string addDays(const string &date, int days)
+    {
+        // Parse DD/MM/YYYY to tm structure using stringstream
+        stringstream ss(date);
+        char slash;
+        int day, month, year;
+        ss >> day >> slash >> month >> slash >> year;
+
+        tm tm_date = {};
+        tm_date.tm_mday = day;
+        tm_date.tm_mon = month - 1;    // Adjust month (0-11)
+        tm_date.tm_year = year - 1900; // Adjust year
+        tm_date.tm_hour = 0;
+        tm_date.tm_min = 0;
+        tm_date.tm_sec = 0;
+
+        // Convert to time_t, add days, convert back
+        auto time = mktime(&tm_date);
+        time += days * 24 * 60 * 60; // Add days in seconds
+
+        // Use standard localtime for cross-platform compatibility
+        tm tm_result = *localtime(&time);
+
+        char buffer[11];
+        strftime(buffer, sizeof(buffer), "%d/%m/%Y", &tm_result);
+        return string(buffer);
+    }
+
+    // ABSTRACTION: Date comparison logic hidden - just call isExpired()
+    static bool isExpired(const string &expiryDate)
+    {
+        string current = getCurrentDate();
+        return compareDates(expiryDate, current) < 0;
+    }
+
+    // ABSTRACTION: Date parsing and comparison hidden behind simple method
+    static int compareDates(const string &date1, const string &date2)
+    {
+        tm tm1 = {}, tm2 = {};
+
+        // Parse date1 using stringstream
+        stringstream ss1(date1);
+        char slash1;
+        int day1, month1, year1;
+        ss1 >> day1 >> slash1 >> month1 >> slash1 >> year1;
+        tm1.tm_mday = day1;
+        tm1.tm_mon = month1 - 1;
+        tm1.tm_year = year1 - 1900;
+
+        // Parse date2 using stringstream
+        stringstream ss2(date2);
+        char slash2;
+        int day2, month2, year2;
+        ss2 >> day2 >> slash2 >> month2 >> slash2 >> year2;
+        tm2.tm_mday = day2;
+        tm2.tm_mon = month2 - 1;
+        tm2.tm_year = year2 - 1900;
+
+        time_t time1 = mktime(&tm1);
+        time_t time2 = mktime(&tm2);
+
+        return (time1 < time2) ? -1 : (time1 > time2) ? 1
+                                                      : 0;
+    }
+
+    // ABSTRACTION: Blood expiry calculation (42 days) hidden
+    static string getBloodExpiryDate(const string &collectionDate)
+    {
+        return addDays(collectionDate, 42); // Blood expires after 42 days
+    }
+};
+
+// ============================================================================
+// HEALTH PROFILE CLASS - User's Health Information
+//
+// ENCAPSULATION: All health data is private with controlled access
+// ABSTRACTION: BMI calculation is hidden behind getBMI() method
+// ============================================================================
+class HealthProfile
 {
 private:
-    string username;
-    string aadharNo;
+    // ENCAPSULATION: Private health data fields
+    string birthDate;
+    double weight; // in kg
+    double height; // in cm
+    double bmi;    // calculated BMI
+
+    // ABSTRACTION: BMI calculation logic is private and hidden
+    double calculateBMI() const
+    {
+        double heightInMeters = height / 100.0; // Convert cm to meters
+        return weight / (heightInMeters * heightInMeters);
+    }
+
+public:
+    // ENCAPSULATION: Default constructor for map compatibility
+    HealthProfile() : birthDate(""), weight(0), height(0), bmi(0) {}
+
+    // ENCAPSULATION: Constructor ensures all data is valid at creation
+    HealthProfile(const string &dob, double w, double h)
+        : birthDate(dob), weight(w), height(h)
+    {
+        bmi = calculateBMI(); // Auto-calculate BMI
+    }
+
+    // ENCAPSULATION: Getters provide controlled read access
+    string getBirthDate() const { return birthDate; }
+    double getWeight() const { return weight; }
+    double getHeight() const { return height; }
+    double getBMI() const { return bmi; }
+
+    // ENCAPSULATION: Setters with validation
+    void setWeight(double w)
+    {
+        if (w > 0 && w < 500)
+            weight = w;
+        bmi = calculateBMI(); // Recalculate BMI
+    }
+
+    void setHeight(double h)
+    {
+        if (h > 0 && h < 300)
+            height = h;
+        bmi = calculateBMI(); // Recalculate BMI
+    }
+
+    // ABSTRACTION: BMI category logic hidden behind simple method
+    string getBMICategory() const
+    {
+        if (bmi < 18.5)
+            return "Underweight";
+        if (bmi < 25)
+            return "Normal";
+        if (bmi < 30)
+            return "Overweight";
+        return "Obese";
+    }
+
+    // ABSTRACTION: Health validation logic hidden
+    bool isEligibleForDonation() const
+    {
+        // Basic eligibility based on BMI (18.5-35)
+        return bmi >= 18.5 && bmi <= 35;
+    }
+};
+
+// ============================================================================
+// IRECORD — ABSTRACT BASE CLASS (Interface for all data records)
+//
+// ABSTRACTION:  Declares what every record must be able to do, without
+//               specifying how. Callers work against this interface only.
+//
+// INHERITANCE:  BloodReqRecord, Donor, and Camp all inherit from IRecord.
+//
+// POLYMORPHISM: printRow() and toCSV() are pure virtual — each derived class
+//               provides its own implementation, resolved at runtime.
+// ============================================================================
+class IRecord
+{
+public:
+    // POLYMORPHISM: pure virtual — forces every subclass to define its own
+    //               row-printing logic; called via base pointer at runtime.
+    virtual void printRow(int index) const = 0;
+
+    // POLYMORPHISM: pure virtual — each record type serialises itself
+    //               differently; resolved at runtime through base pointer.
+    virtual string toCSV() const = 0;
+
+    // POLYMORPHISM: virtual destructor ensures correct cleanup through
+    //               base pointers (required when using polymorphism).
+    virtual ~IRecord() {}
+};
+
+// ============================================================================
+// ACCOUNT — BASE CLASS (shared by User and Hospital)
+//
+// ENCAPSULATION: password is protected, not public — derived classes can
+//                read it but callers cannot bypass getPassword().
+//
+// INHERITANCE:   User and Hospital both extend Account and inherit
+//                password storage + getPassword() without duplicating code.
+// ============================================================================
+class Account
+{
+protected:
+    // ENCAPSULATION: protected so derived classes can access it,
+    //                but external code cannot touch it directly.
     string password;
 
 public:
-    // Constructor - Object Initialization
-    User(const string &uname, const string &aadhar, const string &pwd)
-        : username(uname), aadharNo(aadhar), password(pwd) {}
+    // Constructor initialises the shared field
+    Account(const string &pwd) : password(pwd) {}
 
-    // Getters - Data Abstraction
-    string getUsername() const { return username; }
-    string getAadharNo() const { return aadharNo; }
+    // ENCAPSULATION: controlled read access through a getter
     string getPassword() const { return password; }
 
-    // Setters - Controlled Data Modification
-    void setUsername(const string &uname) { username = uname; }
-    void setAadharNo(const string &aadhar) { aadharNo = aadhar; }
+    // ENCAPSULATION: controlled write access through a setter
     void setPassword(const string &pwd) { password = pwd; }
+
+    // POLYMORPHISM: virtual destructor for safe polymorphic deletion
+    virtual ~Account() {}
 };
 
-// =============================================================================
-// CURRENT USER SESSION CLASS - Singleton Pattern & Encapsulation
-// =============================================================================
+// ============================================================================
+// USER CLASS
+//
+// INHERITANCE:   Inherits password field and getPassword()/setPassword()
+//                from Account — no duplication.
+//
+// ENCAPSULATION: username, aadharNo, and healthProfile are private.
+//                Health data is accessed through controlled methods.
+//
+// COMPOSITION:   User HAS-A HealthProfile - demonstrates composition relationship
+// ============================================================================
+class User : public Account
+{ // INHERITANCE: User IS-AN Account
+private:
+    // ENCAPSULATION: private fields — not accessible outside the class
+    string username;
+    string aadharNo;
+
+    // COMPOSITION: User HAS-A HealthProfile - demonstrates composition
+    HealthProfile *healthProfile;
+
+public:
+    // Constructor delegates password initialisation up to Account
+    // INHERITANCE: Account(pwd) initialises the inherited field
+    User(const string &uname, const string &aadhar, const string &pwd)
+        : Account(pwd), username(uname), aadharNo(aadhar), healthProfile(nullptr) {}
+
+    // Enhanced constructor with health data
+    User(const string &uname, const string &aadhar, const string &pwd,
+         const string &birthDate, double weight, double height)
+        : Account(pwd), username(uname), aadharNo(aadhar),
+          healthProfile(new HealthProfile(birthDate, weight, height)) {}
+
+    // DESTRUCTOR: Clean up health profile - demonstrates proper resource management
+    ~User()
+    {
+        delete healthProfile;
+    }
+
+    // Copy constructor for proper deep copying
+    User(const User &other)
+        : Account(other), username(other.username), aadharNo(other.aadharNo)
+    {
+        healthProfile = other.healthProfile ? new HealthProfile(other.healthProfile->getBirthDate(),
+                                                                other.healthProfile->getWeight(),
+                                                                other.healthProfile->getHeight())
+                                            : nullptr;
+    }
+
+    // Assignment operator for proper copying
+    User &operator=(const User &other)
+    {
+        if (this != &other)
+        {
+            Account::operator=(other);
+            username = other.username;
+            aadharNo = other.aadharNo;
+
+            delete healthProfile;
+            healthProfile = other.healthProfile ? new HealthProfile(other.healthProfile->getBirthDate(),
+                                                                    other.healthProfile->getWeight(),
+                                                                    other.healthProfile->getHeight())
+                                                : nullptr;
+        }
+        return *this;
+    }
+
+    // ENCAPSULATION: controlled read access
+    string getUsername() const { return username; }
+    string getAadharNo() const { return aadharNo; }
+
+    // ENCAPSULATION: Health profile access with null checks
+    bool hasHealthProfile() const { return healthProfile != nullptr; }
+
+    string getBirthDate() const
+    {
+        return healthProfile ? healthProfile->getBirthDate() : "";
+    }
+
+    double getWeight() const
+    {
+        return healthProfile ? healthProfile->getWeight() : 0.0;
+    }
+
+    double getHeight() const
+    {
+        return healthProfile ? healthProfile->getHeight() : 0.0;
+    }
+
+    double getBMI() const
+    {
+        return healthProfile ? healthProfile->getBMI() : 0.0;
+    }
+
+    string getBMICategory() const
+    {
+        return healthProfile ? healthProfile->getBMICategory() : "Unknown";
+    }
+
+    bool isEligibleForDonation() const
+    {
+        return healthProfile ? healthProfile->isEligibleForDonation() : false;
+    }
+
+    // ENCAPSULATION: controlled write access
+    void setUsername(const string &uname) { username = uname; }
+    void setAadharNo(const string &aadhar) { aadharNo = aadhar; }
+
+    // ENCAPSULATION: Health profile management
+    void setHealthProfile(const string &birthDate, double weight, double height)
+    {
+        delete healthProfile;
+        healthProfile = new HealthProfile(birthDate, weight, height);
+    }
+
+    void updateWeight(double weight)
+    {
+        if (healthProfile)
+            healthProfile->setWeight(weight);
+    }
+
+    void updateHeight(double height)
+    {
+        if (healthProfile)
+            healthProfile->setHeight(height);
+    }
+
+    // ABSTRACTION: Display health summary with proper formatting
+    void displayHealthSummary() const
+    {
+        if (!healthProfile)
+        {
+            cout << "No health profile data available." << endl;
+            return;
+        }
+
+        cout << "========================================" << endl;
+        cout << "           HEALTH SUMMARY              " << endl;
+        cout << "========================================" << endl;
+        cout << "Birth Date: " << healthProfile->getBirthDate() << endl;
+        cout << "Weight: " << healthProfile->getWeight() << " kg" << endl;
+        cout << "Height: " << healthProfile->getHeight() << " cm" << endl;
+        cout << "BMI: " << fixed << setprecision(1) << healthProfile->getBMI() << endl;
+        cout << "BMI Category: " << healthProfile->getBMICategory() << endl;
+        cout << "Donation Eligibility: " << (healthProfile->isEligibleForDonation() ? "ELIGIBLE" : "NOT ELIGIBLE") << endl;
+        cout << "========================================" << endl;
+    }
+};
+
+// ============================================================================
+// HOSPITAL CLASS
+//
+// INHERITANCE:   Inherits password field and getPassword()/setPassword()
+//                from Account — same base, different domain data.
+//
+// ENCAPSULATION: hospitalId and hospitalName are private.
+// ============================================================================
+class Hospital : public Account
+{ // INHERITANCE: Hospital IS-AN Account
+private:
+    // ENCAPSULATION: private fields
+    string hospitalId;
+    string hospitalName;
+
+public:
+    // INHERITANCE: delegates password storage up to Account
+    Hospital(const string &hid, const string &hname, const string &pwd)
+        : Account(pwd), hospitalId(hid), hospitalName(hname) {}
+
+    // ENCAPSULATION: controlled read access only — no setters (read-only after creation)
+    string getHospitalId() const { return hospitalId; }
+    string getHospitalName() const { return hospitalName; }
+};
+
+// ============================================================================
+// CURRENT USER SESSION — Singleton-style static state
+//
+// ENCAPSULATION: username and aadharNo are private static fields.
+//                External code can only read/write through set(), clear(),
+//                and the getters — it can never corrupt the session directly.
+// ============================================================================
 class CurrentUser
 {
 private:
+    // ENCAPSULATION: private static — session state is fully hidden
     static string username;
     static string aadharNo;
 
 public:
+    // ENCAPSULATION: the only way to set session data
     static void set(const string &uname, const string &aadhar)
     {
         username = uname;
         aadharNo = aadhar;
     }
+    // ENCAPSULATION: controlled read
     static string getUsername() { return username; }
     static string getAadharNo() { return aadharNo; }
+    // ENCAPSULATION: the only way to clear session data
     static void clear()
     {
         username.clear();
@@ -146,33 +565,15 @@ public:
 string CurrentUser::username = "";
 string CurrentUser::aadharNo = "";
 
-// =============================================================================
-// HOSPITAL CLASS - Encapsulation & Data Hiding
-// =============================================================================
-class Hospital
-{
-private:
-    string hospitalId;
-    string hospitalName;
-    string password;
-
-public:
-    // Constructor - Object Initialization
-    Hospital(const string &hid, const string &hname, const string &pwd)
-        : hospitalId(hid), hospitalName(hname), password(pwd) {}
-
-    // Getters - Data Abstraction
-    string getHospitalId() const { return hospitalId; }
-    string getHospitalName() const { return hospitalName; }
-    string getPassword() const { return password; }
-};
-
-// =============================================================================
-// CURRENT HOSPITAL SESSION CLASS - Singleton Pattern & Encapsulation
-// =============================================================================
+// ============================================================================
+// CURRENT HOSPITAL SESSION — Same pattern as CurrentUser
+//
+// ENCAPSULATION: both fields private static; all access through methods.
+// ============================================================================
 class CurrentHospital
 {
 private:
+    // ENCAPSULATION: private static fields
     static string hospitalId;
     static string hospitalName;
 
@@ -193,12 +594,21 @@ public:
 string CurrentHospital::hospitalId = "";
 string CurrentHospital::hospitalName = "";
 
-// =============================================================================
-// BLOOD REQUEST RECORD CLASS - Data Management & Abstraction
-// =============================================================================
-class BloodReqRecord
-{
+// ============================================================================
+// BLOOD REQUEST RECORD CLASS
+//
+// INHERITANCE:   Extends IRecord — inherits the printRow/toCSV contract.
+//
+// ENCAPSULATION: All five fields are private; no direct mutation after
+//                construction (status is immutable by design — no setter).
+//
+// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals —
+//                when called through an IRecord*, the right version runs.
+// ============================================================================
+class BloodReqRecord : public IRecord
+{ // INHERITANCE: IS-AN IRecord
 private:
+    // ENCAPSULATION: all fields private
     string username;
     string aadharNo;
     string bloodGroup;
@@ -206,20 +616,41 @@ private:
     string status;
 
 public:
-    // Constructor - Object Initialization
+    // Constructor with default status guard
     BloodReqRecord(const string &u, const string &a, const string &b,
                    const string &un, const string &st)
         : username(u), aadharNo(a), bloodGroup(b), units(un),
           status(st.empty() ? "pending" : Utils::trim(st)) {}
 
-    // Getters - Data Abstraction
+    // ENCAPSULATION: getters — no public setters (immutable record)
     string getUsername() const { return username; }
     string getAadharNo() const { return aadharNo; }
     string getBloodGroup() const { return bloodGroup; }
     string getUnits() const { return units; }
     string getStatus() const { return status; }
 
-    // Static factory - load all records from file
+    // POLYMORPHISM: overrides IRecord::printRow() — called at runtime
+    //               when iterating through vector<IRecord*>
+    void printRow(int index) const override
+    {
+        cout << left << setw(5) << index
+             << setw(12) << bloodGroup
+             << setw(8) << units
+             << setw(10) << status << endl;
+    }
+
+    // POLYMORPHISM: overrides IRecord::toCSV() — blood request serialisation
+    string toCSV() const override
+    {
+        return "---\nUsername: " + username +
+               "\nAadhaar No: " + aadharNo +
+               "\nBlood Group: " + bloodGroup +
+               "\nUnits Required: " + units +
+               "\nStatus: " + status;
+    }
+
+    // ABSTRACTION: the entire file-parsing loop hidden behind one static call;
+    //              callers simply receive vector<BloodReqRecord>
     static vector<BloodReqRecord> loadAll(const string &path)
     {
         vector<BloodReqRecord> list;
@@ -227,12 +658,13 @@ public:
         if (!in.is_open())
             return list;
 
-        string username, aadharNo, bloodGroup, units, status = "pending", line;
+        string u, a, b, un, st = "pending", line;
 
+        // Lambda captures all fields; pushes a record when a block ends
         auto pushIfValid = [&]()
         {
-            if (!username.empty())
-                list.emplace_back(username, aadharNo, bloodGroup, units, status);
+            if (!u.empty())
+                list.emplace_back(u, a, b, un, st);
         };
 
         while (getline(in, line))
@@ -241,35 +673,44 @@ public:
             if (line == "---")
             {
                 pushIfValid();
-                username.clear();
-                aadharNo.clear();
-                bloodGroup.clear();
-                units.clear();
-                status = "pending";
+                u.clear();
+                a.clear();
+                b.clear();
+                un.clear();
+                st = "pending";
                 continue;
             }
             if (line.rfind("Username: ", 0) == 0)
-                username = Utils::trim(line.substr(strlen("Username: ")));
+                u = Utils::trim(line.substr(strlen("Username: ")));
             else if (line.rfind("Aadhaar No: ", 0) == 0)
-                aadharNo = Utils::trim(line.substr(strlen("Aadhaar No: ")));
+                a = Utils::trim(line.substr(strlen("Aadhaar No: ")));
             else if (line.rfind("Blood Group: ", 0) == 0)
-                bloodGroup = Utils::trim(line.substr(strlen("Blood Group: ")));
+                b = Utils::trim(line.substr(strlen("Blood Group: ")));
             else if (line.rfind("Units Required: ", 0) == 0)
-                units = Utils::trim(line.substr(strlen("Units Required: ")));
+                un = Utils::trim(line.substr(strlen("Units Required: ")));
             else if (line.rfind("Status: ", 0) == 0)
-                status = Utils::trim(line.substr(strlen("Status: ")));
+                st = Utils::trim(line.substr(strlen("Status: ")));
         }
         pushIfValid();
         return list;
     }
 };
 
-// =============================================================================
-// DONOR CLASS - Encapsulation & Data Validation
-// =============================================================================
-class Donor
-{
+// ============================================================================
+// DONOR CLASS
+//
+// INHERITANCE:   Extends IRecord — must implement printRow() and toCSV().
+//
+// ENCAPSULATION: Nine private fields; only donationCompleted has a setter
+//                because it is the only field that legitimately changes
+//                post-construction.
+//
+// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals.
+// ============================================================================
+class Donor : public IRecord
+{ // INHERITANCE: Donor IS-AN IRecord
 private:
+    // ENCAPSULATION: all fields private
     string name;
     string email;
     string dob;
@@ -281,13 +722,12 @@ private:
     bool donationCompleted;
 
 public:
-    // Constructor - Object Creation
     Donor(const string &n, const string &e, const string &d, const string &bg,
           int a, const string &dis, bool elg, const string &hid, bool completed)
         : name(n), email(e), dob(d), bloodGroup(bg), age(a), disease(dis),
           eligible(elg), hospitalId(hid), donationCompleted(completed) {}
 
-    // Getters - Data Abstraction
+    // ENCAPSULATION: read-only access via getters
     string getName() const { return name; }
     string getEmail() const { return email; }
     string getDob() const { return dob; }
@@ -298,10 +738,31 @@ public:
     string getHospitalId() const { return hospitalId; }
     bool isDonationCompleted() const { return donationCompleted; }
 
-    // Setter - Controlled Modification
+    // ENCAPSULATION: only the completion flag may be changed externally
     void setDonationCompleted(bool completed) { donationCompleted = completed; }
 
-    // Static factory method - Factory Pattern
+    // POLYMORPHISM: runtime override of IRecord::printRow()
+    void printRow(int index) const override
+    {
+        cout << left << setw(5) << index
+             << setw(20) << name
+             << setw(25) << email
+             << setw(12) << dob
+             << setw(10) << bloodGroup
+             << setw(6) << age
+             << setw(15) << (disease == "Yes" || disease == "YES" ? "Yes" : "No")
+             << setw(10) << (donationCompleted ? "Completed" : "Pending") << endl;
+    }
+
+    // POLYMORPHISM: runtime override of IRecord::toCSV()
+    string toCSV() const override
+    {
+        return name + "," + email + "," + dob + "," + bloodGroup + "," +
+               to_string(age) + "," + disease + "," +
+               (eligible ? "1" : "0") + "," + hospitalId;
+    }
+
+    // ABSTRACTION: CSV-to-object construction hidden; callers get a Donor
     static Donor createFromCSV(const vector<string> &parts)
     {
         if (parts.size() == 8)
@@ -311,29 +772,51 @@ public:
     }
 };
 
-// =============================================================================
-// CAMP CLASS - Event Organization & Encapsulation
-// =============================================================================
-class Camp
-{
+// ============================================================================
+// CAMP CLASS
+//
+// INHERITANCE:   Extends IRecord.
+//
+// ENCAPSULATION: All four fields private; fully read-only after construction.
+//
+// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals.
+// ============================================================================
+class Camp : public IRecord
+{ // INHERITANCE: Camp IS-AN IRecord
 private:
+    // ENCAPSULATION: all fields private
     string name;
     string date;
     string venue;
     string city;
 
 public:
-    // Constructor - Object Initialization
     Camp(const string &n, const string &d, const string &v, const string &c)
         : name(n), date(d), venue(v), city(c) {}
 
-    // Getters - Data Abstraction
+    // ENCAPSULATION: getters only — no setters (camps are immutable)
     string getName() const { return name; }
     string getDate() const { return date; }
     string getVenue() const { return venue; }
     string getCity() const { return city; }
 
-    // Static factory method - Factory Pattern
+    // POLYMORPHISM: runtime override of IRecord::printRow()
+    void printRow(int index) const override
+    {
+        cout << left << setw(5) << index
+             << setw(25) << name
+             << setw(12) << date
+             << setw(20) << venue
+             << setw(15) << city << endl;
+    }
+
+    // POLYMORPHISM: runtime override of IRecord::toCSV()
+    string toCSV() const override
+    {
+        return name + "," + date + "," + venue + "," + city;
+    }
+
+    // ABSTRACTION: factory hides construction-from-parts detail
     static Camp createFromCSV(const vector<string> &parts)
     {
         if (parts.size() == 4)
@@ -342,16 +825,99 @@ public:
     }
 };
 
-// =============================================================================
-// INVENTORY CLASS - Blood Stock Management (Encapsulation & Data Hiding)
-// =============================================================================
+// ============================================================================
+// BLOOD STOCK RECORD CLASS - Individual blood stock with expiry
+//
+// ENCAPSULATION: All blood stock data is private with controlled access
+// INHERITANCE: Extends IRecord for polymorphic display capabilities
+// ============================================================================
+class BloodStockRecord : public IRecord
+{
+private:
+    // ENCAPSULATION: Private blood stock fields
+    string bloodGroup;
+    int units;
+    string collectionDate;
+    string expiryDate;
+
+public:
+    // Constructor with automatic expiry calculation
+    BloodStockRecord(const string &bg, int u, const string &cDate)
+        : bloodGroup(bg), units(u), collectionDate(cDate)
+    {
+        // ABSTRACTION: Expiry calculation hidden in DateUtils
+        expiryDate = DateUtils::getBloodExpiryDate(collectionDate);
+    }
+
+    // ENCAPSULATION: Getters for controlled access
+    string getBloodGroup() const { return bloodGroup; }
+    int getUnits() const { return units; }
+    string getCollectionDate() const { return collectionDate; }
+    string getExpiryDate() const { return expiryDate; }
+
+    // ABSTRACTION: Expiry status check hidden behind simple method
+    bool isExpired() const
+    {
+        return DateUtils::isExpired(expiryDate);
+    }
+
+    // ENCAPSULATION: Safe unit modification with validation
+    bool addUnits(int u)
+    {
+        if (u > 0)
+        {
+            units += u;
+            return true;
+        }
+        return false;
+    }
+
+    bool removeUnits(int u)
+    {
+        if (u > 0 && units >= u)
+        {
+            units -= u;
+            return true;
+        }
+        return false;
+    }
+
+    // POLYMORPHISM: Implementation of IRecord interface
+    void printRow(int index) const override
+    {
+        cout << left << setw(5) << index
+             << setw(10) << bloodGroup
+             << setw(12) << collectionDate
+             << setw(12) << expiryDate
+             << setw(8) << units
+             << setw(10) << (isExpired() ? "EXPIRED" : "VALID") << endl;
+    }
+
+    // POLYMORPHISM: CSV serialization for blood stock
+    string toCSV() const override
+    {
+        return bloodGroup + "," + to_string(units) + "," +
+               collectionDate + "," + expiryDate;
+    }
+};
+
+// ============================================================================
+// INVENTORY CLASS
+//
+// ENCAPSULATION: VALID_BLOOD_GROUPS is a class-level constant — not a global.
+//                All file paths, load/save logic, and validation are hidden
+//                inside static methods; callers only call display() or menu().
+//
+// ABSTRACTION:   menu() hides the entire add/remove/view loop behind one call.
+//                loadFromFile() hides all ifstream and parsing detail.
+// ============================================================================
 class Inventory
 {
 public:
-    // All valid blood groups as a class-level constant
+    // ENCAPSULATION: constant lives inside the class, not in global scope
     static const vector<string> VALID_BLOOD_GROUPS;
 
-    // Validate a blood group string
+    // ABSTRACTION: validation detail hidden; callers get a bool
     static bool isValidBloodGroup(const string &group)
     {
         for (const auto &g : VALID_BLOOD_GROUPS)
@@ -360,25 +926,21 @@ public:
         return false;
     }
 
-    // Derive the per-hospital inventory file path
+    // ABSTRACTION: path construction logic hidden; callers just call getFilePath()
     static string getFilePath()
     {
         const string &hid = CurrentHospital::getHospitalId();
-        if (hid.empty())
-            return "textFiles/inventory.txt";
-        return "textFiles/inventory_" + hid + ".txt";
+        return hid.empty() ? "textFiles/inventory.txt"
+                           : "textFiles/inventory_" + hid + ".txt";
     }
 
-    // Load inventory map from file - File I/O
-    static map<string, int> loadFromFile(const string &filename)
+    // ABSTRACTION: Enhanced loading with expiry dates
+    static vector<BloodStockRecord> loadStockRecords(const string &filename)
     {
-        map<string, int> inv;
-        for (const auto &g : VALID_BLOOD_GROUPS)
-            inv[g] = 0;
-
+        vector<BloodStockRecord> stocks;
         ifstream in(filename);
         if (!in.is_open())
-            return inv;
+            return stocks;
 
         string line;
         while (getline(in, line))
@@ -386,60 +948,132 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            size_t sep = line.find(',');
-            if (sep == string::npos)
-                continue;
-            string group = Utils::trim(line.substr(0, sep));
-            string unitsStr = Utils::trim(line.substr(sep + 1));
-            if (!isValidBloodGroup(group))
-                continue;
-            try
+
+            vector<string> parts = Utils::splitCSV(line, 4);
+            if (parts.size() >= 2 && isValidBloodGroup(parts[0]))
             {
-                int u = stoi(unitsStr);
-                if (u >= 0)
-                    inv[group] = u;
-            }
-            catch (...)
-            {
+                try
+                {
+                    int units = stoi(parts[1]);
+                    string collectionDate = parts.size() > 2 ? parts[2] : DateUtils::getCurrentDate();
+
+                    // Create blood stock record with automatic expiry calculation
+                    BloodStockRecord stock(parts[0], units, collectionDate);
+                    stocks.push_back(stock);
+                }
+                catch (...)
+                {
+                    // Skip invalid records
+                }
             }
         }
-        return inv;
+        return stocks;
     }
 
-    // Save inventory map to file - Data Persistence
-    static bool saveToFile(const map<string, int> &inv, const string &filename)
+    // ABSTRACTION: Enhanced saving with expiry dates
+    static bool saveStockRecords(const vector<BloodStockRecord> &stocks, const string &filename)
     {
         ofstream out(filename, ios::trunc);
         if (!out.is_open())
         {
-            cout << "[ERROR] Could not save to " << filename << ": could not open file" << endl;
+            cout << "[ERROR] Could not save to " << filename << endl;
             return false;
         }
-        for (const auto &g : VALID_BLOOD_GROUPS)
-            out << g << "," << inv.at(g) << endl;
+
+        for (const auto &stock : stocks)
+        {
+            out << stock.toCSV() << endl;
+        }
         out.flush();
         return true;
     }
 
-    // Display inventory table
-    static void display()
+    // ABSTRACTION: Get available units (non-expired)
+    static int getAvailableUnits(const string &bloodGroup, const vector<BloodStockRecord> &stocks)
     {
-        auto inv = loadFromFile(getFilePath());
-        cout << "========================================" << endl;
-        cout << "             BLOOD INVENTORY            " << endl;
-        cout << "========================================" << endl;
-        cout << left << setw(5) << "NO." << setw(10) << "BLOOD" << setw(10) << "UNITS" << endl;
-        cout << string(25, '-') << endl;
-        int index = 1;
-        for (const auto &g : VALID_BLOOD_GROUPS)
+        int available = 0;
+        for (const auto &stock : stocks)
         {
-            cout << left << setw(5) << index << setw(10) << g
-                 << setw(10) << inv[g] << " units" << endl;
-            index++;
+            if (stock.getBloodGroup() == bloodGroup && !stock.isExpired())
+            {
+                available += stock.getUnits();
+            }
+        }
+        return available;
+    }
+
+    // ABSTRACTION: Get expired blood stocks
+    static vector<BloodStockRecord> getExpiredStocks(const vector<BloodStockRecord> &stocks)
+    {
+        vector<BloodStockRecord> expired;
+        for (const auto &stock : stocks)
+        {
+            if (stock.isExpired())
+                expired.push_back(stock);
+        }
+        return expired;
+    }
+
+    // ABSTRACTION: Display expired blood stocks
+    static void displayExpiredStocks(const vector<BloodStockRecord> &expired)
+    {
+        cout << "========================================" << endl;
+        cout << "           EXPIRED BLOOD STOCKS         " << endl;
+        cout << "========================================" << endl;
+
+        if (expired.empty())
+        {
+            cout << "No expired blood stocks found." << endl;
+            return;
+        }
+
+        cout << left << setw(5) << "NO." << setw(10) << "BLOOD"
+             << setw(12) << "COLLECTED" << setw(12) << "EXPIRES"
+             << setw(8) << "UNITS" << setw(10) << "STATUS" << endl;
+        cout << string(57, '-') << endl;
+
+        for (size_t i = 0; i < expired.size(); i++)
+        {
+            expired[i].printRow(static_cast<int>(i + 1));
         }
     }
 
-    // Interactive inventory management menu
+    // ABSTRACTION: Enhanced display with expiry information
+    static void displayWithExpiry()
+    {
+        auto stocks = loadStockRecords(getFilePath());
+        cout << "========================================" << endl;
+        cout << "             BLOOD INVENTORY            " << endl;
+        cout << "========================================" << endl;
+        cout << left << setw(5) << "NO." << setw(10) << "BLOOD"
+             << setw(12) << "COLLECTED" << setw(12) << "EXPIRES"
+             << setw(8) << "UNITS" << setw(10) << "STATUS" << endl;
+        cout << string(57, '-') << endl;
+
+        int idx = 1;
+        for (const auto &g : VALID_BLOOD_GROUPS)
+        {
+            bool found = false;
+            for (const auto &stock : stocks)
+            {
+                if (stock.getBloodGroup() == g)
+                {
+                    stock.printRow(idx++);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                // Show zero stock for missing blood groups
+                cout << left << setw(5) << idx++ << setw(10) << g
+                     << setw(12) << "N/A" << setw(12) << "N/A"
+                     << setw(8) << "0" << setw(10) << "NO STOCK" << endl;
+            }
+        }
+    }
+
+    // ABSTRACTION: entire menu loop hidden; Application just calls menu()
     static void menu()
     {
         while (true)
@@ -450,14 +1084,16 @@ public:
             cout << "1. Add Stock" << endl;
             cout << "2. Remove Stock" << endl;
             cout << "3. View Inventory" << endl;
-            cout << "4. Back" << endl;
-            cout << "Select an option (1-4): ";
+            cout << "4. View Expired Blood" << endl;
+            cout << "5. Delete Expired Blood" << endl;
+            cout << "6. Back" << endl;
+            cout << "Select an option (1-6): ";
             int choice = Utils::readIntLine();
             cout << endl;
 
-            if (choice == 1)
+            if (choice == 1 || choice == 2)
             {
-                string group, unitsStr;
+                string group, ustr;
                 cout << "Enter blood group (A+, A-, B+, B-, AB+, AB-, O+, O-): ";
                 getline(cin, group);
                 group = Utils::trim(Utils::toUpper(group));
@@ -466,90 +1102,140 @@ public:
                     cout << "Invalid blood group." << endl;
                     continue;
                 }
-                cout << "Enter units to add: ";
-                getline(cin, unitsStr);
-                unitsStr = Utils::trim(unitsStr);
-                if (!Utils::regexMatch(unitsStr, "^\\d+$"))
+                cout << (choice == 1 ? "Enter units to add: " : "Enter units to remove: ");
+                getline(cin, ustr);
+                ustr = Utils::trim(ustr);
+                if (!Utils::regexMatch(ustr, "^\\d+$"))
                 {
                     cout << "Units must be a positive whole number." << endl;
                     continue;
                 }
-                int units = stoi(unitsStr);
+                int units = stoi(ustr);
                 if (units <= 0)
                 {
                     cout << "Units must be greater than 0." << endl;
                     continue;
                 }
-                auto inv = loadFromFile(getFilePath());
-                inv[group] += units;
-                if (saveToFile(inv, getFilePath()))
+
+                // Load existing stocks
+                auto stocks = loadStockRecords(getFilePath());
+
+                // Find or create stock record for this blood group
+                bool found = false;
+                for (auto &stock : stocks)
+                {
+                    if (stock.getBloodGroup() == group)
+                    {
+                        if (choice == 1)
+                        {
+                            stock.addUnits(units);
+                            cout << units << " units added to " << group << "." << endl;
+                        }
+                        else
+                        {
+                            if (stock.getUnits() >= units)
+                            {
+                                stock.removeUnits(units);
+                                cout << units << " units removed from " << group << "." << endl;
+                            }
+                            else
+                            {
+                                cout << "Not enough stock available for " << group << "." << endl;
+                            }
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found && choice == 1)
+                {
+                    // Create new stock record with current date
+                    BloodStockRecord newStock(group, units, DateUtils::getCurrentDate());
+                    stocks.push_back(newStock);
                     cout << units << " units added to " << group << "." << endl;
-            }
-            else if (choice == 2)
-            {
-                string group, unitsStr;
-                cout << "Enter blood group (A+, A-, B+, B-, AB+, AB-, O+, O-): ";
-                getline(cin, group);
-                group = Utils::trim(Utils::toUpper(group));
-                if (!isValidBloodGroup(group))
-                {
-                    cout << "Invalid blood group." << endl;
-                    continue;
                 }
-                cout << "Enter units to remove: ";
-                getline(cin, unitsStr);
-                unitsStr = Utils::trim(unitsStr);
-                if (!Utils::regexMatch(unitsStr, "^\\d+$"))
-                {
-                    cout << "Units must be a positive whole number." << endl;
-                    continue;
-                }
-                int units = stoi(unitsStr);
-                if (units <= 0)
-                {
-                    cout << "Units must be greater than 0." << endl;
-                    continue;
-                }
-                auto inv = loadFromFile(getFilePath());
-                if (inv[group] < units)
-                {
-                    cout << "Not enough stock available for " << group << "." << endl;
-                    continue;
-                }
-                inv[group] -= units;
-                if (saveToFile(inv, getFilePath()))
-                    cout << units << " units removed from " << group << "." << endl;
+
+                // Save updated stocks
+                saveStockRecords(stocks, getFilePath());
             }
             else if (choice == 3)
             {
-                display();
+                displayWithExpiry();
             }
             else if (choice == 4)
+            {
+                auto stocks = loadStockRecords(getFilePath());
+                auto expired = getExpiredStocks(stocks);
+                displayExpiredStocks(expired);
+            }
+            else if (choice == 5)
+            {
+                cout << "Removing expired blood stocks..." << endl;
+                auto stocks = loadStockRecords(getFilePath());
+
+                // Remove expired stocks
+                auto it = stocks.begin();
+                int removedCount = 0;
+                while (it != stocks.end())
+                {
+                    if (it->isExpired())
+                    {
+                        cout << "Removing expired stock: " << it->getBloodGroup()
+                             << " (" << it->getUnits() << " units)" << endl;
+                        it = stocks.erase(it);
+                        removedCount++;
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+
+                if (removedCount > 0)
+                {
+                    saveStockRecords(stocks, getFilePath());
+                    cout << "Removed " << removedCount << " expired stock records." << endl;
+                }
+                else
+                {
+                    cout << "No expired stocks to remove." << endl;
+                }
+            }
+            else if (choice == 6)
             {
                 return;
             }
             else
             {
-                cout << "Invalid choice. Please select 1-4." << endl;
+                cout << "Invalid choice. Please select 1-6." << endl;
             }
-            cout << "Press Enter to continue..." << endl;
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (choice != 6)
+            {
+                cout << "Press Enter to continue..." << endl;
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            }
         }
     }
 };
-
-// Static member definition
 const vector<string> Inventory::VALID_BLOOD_GROUPS = {"A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"};
 
-// =============================================================================
-// FILE REPOSITORY CLASS - File I/O for Users, Hospitals, Donors, Camps
-//                         (Single Responsibility & Abstraction)
-// =============================================================================
+// ============================================================================
+// FILE REPOSITORY CLASS
+//
+// ENCAPSULATION: All raw file I/O is centralised here. No other class ever
+//                opens an ifstream or ofstream directly.
+//
+// ABSTRACTION:   Callers receive domain objects (User, Hospital, Donor, Camp,
+//                BloodReqRecord) — they never deal with raw file lines.
+// ============================================================================
 class FileRepository
 {
 public:
-    // ---------- USER FILE OPERATIONS ----------
+    // ---- USER ----
 
+    // ABSTRACTION: ifstream + CSV parsing hidden; returns ready vector<User>
     static vector<User> loadUsers(const string &filename)
     {
         vector<User> users;
@@ -565,26 +1251,112 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            auto parts = Utils::splitCSV(line, 3);
-            if (parts.size() == 3)
-                users.push_back(User(parts[0], parts[1], parts[2]));
+            auto p = Utils::splitCSV(line, 3);
+            if (p.size() == 3)
+                users.push_back(User(p[0], p[1], p[2]));
         }
         return users;
     }
 
-    static bool saveUser(const string &username, const string &aadharNo, const string &password)
+    // ABSTRACTION: ofstream detail hidden; returns success bool
+    static bool saveUser(const string &username, const string &aadharNo, const string &pwd)
     {
         ofstream out("textFiles/users.txt", ios::app);
         if (!out.is_open())
         {
-            cout << "[Error] Data could not be saved: could not open users.txt" << endl;
+            cout << "[Error] Could not open users.txt" << endl;
             return false;
         }
-        out << username << "," << aadharNo << "," << password << "\n";
+        out << username << "," << aadharNo << "," << pwd << "\n";
         out.flush();
         return true;
     }
 
+    // ENHANCED: Save user with health profile information
+    static bool saveUserWithHealth(const string &username, const string &aadharNo,
+                                   const string &pwd, const string &birthDate,
+                                   double weight, double height)
+    {
+        // Save basic user info
+        if (!saveUser(username, aadharNo, pwd))
+        {
+            return false;
+        }
+
+        // Save health profile to separate file
+        ofstream out("textFiles/user_health.txt", ios::app);
+        if (!out.is_open())
+        {
+            cout << "[Error] Could not open user_health.txt" << endl;
+            return false;
+        }
+
+        // Format: aadharNo,birthDate,weight,height
+        out << aadharNo << "," << birthDate << "," << fixed << setprecision(1)
+            << weight << "," << fixed << setprecision(1) << height << "\n";
+        out.flush();
+        return true;
+    }
+
+    // ENHANCED: Load user with health profile
+    static vector<User> loadUsersWithHealth(const string &filename)
+    {
+        vector<User> users = loadUsers(filename);
+
+        // Load health profiles
+        map<string, HealthProfile> healthMap;
+        ifstream in("textFiles/user_health.txt");
+        if (in.is_open())
+        {
+            string line;
+            while (getline(in, line))
+            {
+                line = Utils::trim(line);
+                if (line.empty())
+                    continue;
+
+                auto parts = Utils::splitCSV(line, 4);
+                if (parts.size() >= 4)
+                {
+                    try
+                    {
+                        string aadhar = parts[0];
+                        string birthDate = parts[1];
+                        double weight = stod(parts[2]);
+                        double height = stod(parts[3]);
+
+                        healthMap[aadhar] = HealthProfile(birthDate, weight, height);
+                    }
+                    catch (...)
+                    {
+                        // Skip invalid health records
+                    }
+                }
+            }
+        }
+
+        // Create enhanced users with health profiles
+        vector<User> enhancedUsers;
+        for (auto &user : users)
+        {
+            User enhancedUser(user.getUsername(), user.getAadharNo(), user.getPassword());
+
+            auto healthIt = healthMap.find(user.getAadharNo());
+            if (healthIt != healthMap.end())
+            {
+                const auto &health = healthIt->second;
+                enhancedUser.setHealthProfile(health.getBirthDate(),
+                                              health.getWeight(),
+                                              health.getHeight());
+            }
+
+            enhancedUsers.push_back(enhancedUser);
+        }
+
+        return enhancedUsers;
+    }
+
+    // ABSTRACTION: file scan hidden; callers get a plain bool
     static bool aadharExists(const string &aadharNo)
     {
         ifstream in("textFiles/users.txt");
@@ -593,18 +1365,16 @@ public:
         string line;
         while (getline(in, line))
         {
-            line = Utils::trim(line);
-            if (line.empty())
-                continue;
-            auto parts = Utils::splitCSV(line, 3);
-            if (parts.size() > 1 && parts[1] == aadharNo)
+            auto p = Utils::splitCSV(Utils::trim(line), 3);
+            if (p.size() > 1 && p[1] == aadharNo)
                 return true;
         }
         return false;
     }
 
-    // ---------- HOSPITAL FILE OPERATIONS ----------
+    // ---- HOSPITAL ----
 
+    // ABSTRACTION: same pattern as loadUsers but returns vector<Hospital>
     static vector<Hospital> loadHospitals(const string &filename)
     {
         vector<Hospital> hospitals;
@@ -620,22 +1390,22 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            auto parts = Utils::splitCSV(line, 3);
-            if (parts.size() == 3)
-                hospitals.push_back(Hospital(parts[0], parts[1], parts[2]));
+            auto p = Utils::splitCSV(line, 3);
+            if (p.size() == 3)
+                hospitals.push_back(Hospital(p[0], p[1], p[2]));
         }
         return hospitals;
     }
 
-    static bool saveHospital(const string &hospitalId, const string &hospitalName, const string &password)
+    static bool saveHospital(const string &hid, const string &hname, const string &pwd)
     {
         ofstream out("textFiles/hospitals.txt", ios::app);
         if (!out.is_open())
         {
-            cout << "[Error] Data could not be saved: could not open hospitals.txt" << endl;
+            cout << "[Error] Could not open hospitals.txt" << endl;
             return false;
         }
-        out << hospitalId << "," << hospitalName << "," << password << "\n";
+        out << hid << "," << hname << "," << pwd << "\n";
         out.flush();
         return true;
     }
@@ -648,18 +1418,16 @@ public:
         string line;
         while (getline(in, line))
         {
-            line = Utils::trim(line);
-            if (line.empty())
-                continue;
-            auto parts = Utils::splitCSV(line, 3);
-            if (!parts.empty() && parts[0] == hospitalId)
+            auto p = Utils::splitCSV(Utils::trim(line), 3);
+            if (!p.empty() && p[0] == hospitalId)
                 return true;
         }
         return false;
     }
 
-    // ---------- DONOR FILE OPERATIONS ----------
+    // ---- DONOR ----
 
+    // ABSTRACTION: uses Donor::createFromCSV factory; callers get vector<Donor>
     static vector<Donor> loadDonors(const string &filename)
     {
         vector<Donor> donors;
@@ -675,27 +1443,25 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            auto parts = Utils::splitCSV(line, 8);
-            Donor d = Donor::createFromCSV(parts);
+            Donor d = Donor::createFromCSV(Utils::splitCSV(line, 8));
             if (!d.getName().empty())
                 donors.push_back(d);
         }
         return donors;
     }
 
+    // POLYMORPHISM + ABSTRACTION: uses IRecord::toCSV() to serialise —
+    //   the Donor's own toCSV() override is called through the base interface.
     static bool saveDonor(const Donor &donor, const string &filename)
     {
         ofstream out("textFiles/" + filename, ios::app);
         if (!out.is_open())
         {
-            cout << "[ERROR] Could not save to " << filename << ": could not open file" << endl;
+            cout << "[ERROR] Could not save to " << filename << endl;
             return false;
         }
-        out << donor.getName() << "," << donor.getEmail() << ","
-            << donor.getDob() << "," << donor.getBloodGroup() << ","
-            << donor.getAge() << "," << donor.getDisease() << ","
-            << (donor.isEligible() ? "1" : "0") << ","
-            << donor.getHospitalId() << endl;
+        // POLYMORPHISM: toCSV() dispatches to Donor::toCSV() at runtime
+        out << donor.toCSV() << endl;
         out.flush();
         return true;
     }
@@ -707,18 +1473,16 @@ public:
             return false;
         for (const auto &d : donors)
         {
-            out << d.getName() << "," << d.getEmail() << ","
-                << d.getDob() << "," << d.getBloodGroup() << ","
-                << d.getAge() << "," << d.getDisease() << ","
-                << (d.isEligible() ? "1" : "0") << ","
-                << d.getHospitalId() << endl;
+            // POLYMORPHISM: toCSV() dispatches to Donor::toCSV() at runtime
+            out << d.toCSV() << endl;
         }
         out.flush();
         return true;
     }
 
-    // ---------- CAMP FILE OPERATIONS ----------
+    // ---- CAMP ----
 
+    // ABSTRACTION: uses Camp::createFromCSV factory; callers get vector<Camp>
     static vector<Camp> loadCamps(const string &filename)
     {
         vector<Camp> camps;
@@ -731,30 +1495,31 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            auto parts = Utils::splitCSV(line, 4);
-            Camp c = Camp::createFromCSV(parts);
+            Camp c = Camp::createFromCSV(Utils::splitCSV(line, 4));
             if (!c.getName().empty())
                 camps.push_back(c);
         }
         return camps;
     }
 
+    // POLYMORPHISM + ABSTRACTION: uses IRecord::toCSV() to serialise
     static bool saveCamp(const Camp &camp, const string &filename)
     {
         ofstream out("textFiles/" + filename, ios::app);
         if (!out.is_open())
         {
-            cout << "[ERROR] Could not save to " << filename << ": could not open file" << endl;
+            cout << "[ERROR] Could not save to " << filename << endl;
             return false;
         }
-        out << camp.getName() << "," << camp.getDate() << ","
-            << camp.getVenue() << "," << camp.getCity() << endl;
+        // POLYMORPHISM: toCSV() dispatches to Camp::toCSV() at runtime
+        out << camp.toCSV() << endl;
         out.flush();
         return true;
     }
 
-    // ---------- BLOOD REQUEST FILE OPERATIONS ----------
+    // ---- BLOOD REQUEST ----
 
+    // ABSTRACTION: block-format file writing hidden; callers just call save()
     static bool saveBloodRequest(const string &username, const string &aadharNo,
                                  const string &bloodGroup, const string &units,
                                  const string &reqFile)
@@ -762,15 +1527,12 @@ public:
         ofstream out("textFiles/" + reqFile, ios::app);
         if (!out.is_open())
         {
-            cout << "[ERROR] Could not save to " << reqFile << ": could not open file" << endl;
+            cout << "[ERROR] Could not save to " << reqFile << endl;
             return false;
         }
-        out << "---" << endl;
-        out << "Username: " << username << endl;
-        out << "Aadhaar No: " << aadharNo << endl;
-        out << "Blood Group: " << bloodGroup << endl;
-        out << "Units Required: " << units << endl;
-        out << "Status: pending" << endl;
+        // POLYMORPHISM: toCSV() dispatches to BloodReqRecord::toCSV() at runtime
+        BloodReqRecord rec(username, aadharNo, bloodGroup, units, "pending");
+        out << rec.toCSV() << endl;
         out.flush();
         return true;
     }
@@ -782,28 +1544,88 @@ public:
             return false;
         for (const auto &r : records)
         {
-            out << "---" << endl;
-            out << "Username: " << r.getUsername() << endl;
-            out << "Aadhaar No: " << r.getAadharNo() << endl;
-            out << "Blood Group: " << r.getBloodGroup() << endl;
-            out << "Units Required: " << r.getUnits() << endl;
-            out << "Status: " << r.getStatus() << endl;
+            // POLYMORPHISM: toCSV() dispatches to BloodReqRecord::toCSV() at runtime
+            out << r.toCSV() << endl;
         }
         out.flush();
         return true;
     }
 };
 
-// =============================================================================
-// DONOR MANAGER CLASS - Donor CRUD & Display (Encapsulation & SRP)
-// =============================================================================
-class DonorManager
+// ============================================================================
+// IMANAGER — ABSTRACT BASE CLASS (Interface for all manager/menu classes)
+//
+// ABSTRACTION:  Declares what every manager must expose — just showMenu().
+//               Application calls showMenu() without knowing the type.
+//
+// INHERITANCE:  DonorManager, CampManager, BloodRequestManager extend this.
+//
+// POLYMORPHISM: showMenu() is pure virtual — runtime dispatch selects the
+//               correct menu when called through an IManager pointer.
+// ============================================================================
+class IManager
 {
+public:
+    // POLYMORPHISM: pure virtual — each manager has its own menu
+    virtual void showMenu() = 0;
+    virtual ~IManager() {}
+};
+
+// ============================================================================
+// DONOR MANAGER CLASS
+//
+// INHERITANCE:   Extends IManager — must implement showMenu().
+//
+// ENCAPSULATION: DONORS_FILE constant is private; file name is an
+//                implementation detail hidden from callers.
+//
+// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
+// ============================================================================
+class DonorManager : public IManager
+{ // INHERITANCE: IS-AN IManager
 private:
+    // ENCAPSULATION: file path hidden as private constant
     static const string DONORS_FILE;
 
 public:
-    // Add a new donor interactively
+    // POLYMORPHISM: overrides IManager::showMenu(); called at runtime
+    void showMenu() override
+    {
+        while (true)
+        {
+            cout << "========================================" << endl;
+            cout << "          DONOR MANAGEMENT             " << endl;
+            cout << "========================================" << endl;
+            cout << "1. Add Donor\n2. View Donor List\n3. Search Donors by Blood Group\n4. Back" << endl;
+            cout << "Select an option (1-4): ";
+            int choice = Utils::readIntLine();
+            cout << endl;
+            switch (choice)
+            {
+            case 1:
+                addDonor();
+                break;
+            case 2:
+                viewDonors();
+                break;
+            case 3:
+                searchDonorsByBloodGroup();
+                break;
+            case 4:
+                return;
+            default:
+                cout << "Invalid choice. Please select 1-4." << endl;
+                break;
+            }
+            if (choice != 4)
+            {
+                cout << "Press Enter to continue..." << endl;
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            }
+        }
+    }
+
+    // ABSTRACTION: all input + validation + object creation hidden
     static void addDonor()
     {
         string name, email, dob, bloodGroup, disease;
@@ -865,7 +1687,7 @@ public:
         getline(cin, disease);
         disease = Utils::trim(disease);
 
-        // Create donor object - Constructor Usage
+        // ENCAPSULATION: Donor object created; its fields are private from here on
         Donor newDonor(name, email, dob, bloodGroup, age, disease,
                        (disease != "Yes" && disease != "YES"),
                        CurrentHospital::getHospitalId(), false);
@@ -885,11 +1707,73 @@ public:
         }
     }
 
-    // View donors for current hospital with mark-as-completed option
+    // ABSTRACTION: all search input, filtering, and display hidden behind one call
+    // ENCAPSULATION: accesses donor fields only through getters (getBloodGroup, getHospitalId, etc.)
+    static void searchDonorsByBloodGroup()
+    {
+        cout << "========================================" << endl;
+        cout << "      SEARCH DONORS BY BLOOD GROUP      " << endl;
+        cout << "========================================" << endl;
+
+        string searchGroup;
+        while (true)
+        {
+            cout << "Enter Blood Group to search (A+, A-, B+, B-, AB+, AB-, O+, O-): ";
+            getline(cin, searchGroup);
+            searchGroup = Utils::trim(Utils::toUpper(searchGroup));
+            if (Utils::regexMatch(searchGroup, "^(A|B|AB|O)[+-]$"))
+                break;
+            cout << "[ERROR] Invalid blood group!" << endl;
+            cout << "Valid types: A+, A-, B+, B-, AB+, AB-, O+, O-." << endl;
+            cout << "Please try again." << endl;
+        }
+
+        auto donors = FileRepository::loadDonors(DONORS_FILE);
+        vector<Donor> matched;
+
+        // ENCAPSULATION: filters using getters — no direct field access
+        for (const auto &d : donors)
+        {
+            if (Utils::toUpper(d.getBloodGroup()) == searchGroup &&
+                d.getHospitalId() == CurrentHospital::getHospitalId())
+                matched.push_back(d);
+        }
+
+        cout << endl;
+        cout << "========================================" << endl;
+        cout << "  Results for Blood Group: " << searchGroup << endl;
+        cout << "========================================" << endl;
+
+        if (matched.empty())
+        {
+            cout << "No donors found with blood group " << searchGroup
+                 << " in your hospital." << endl;
+            return;
+        }
+
+        cout << "Total matching donors: " << matched.size() << endl
+             << endl;
+        cout << left << setw(5) << "NO." << setw(20) << "NAME"
+             << setw(25) << "EMAIL" << setw(12) << "DOB"
+             << setw(10) << "BLOOD" << setw(6) << "AGE"
+             << setw(15) << "DISEASE" << setw(10) << "STATUS" << endl;
+        cout << string(103, '-') << endl;
+
+        for (size_t i = 0; i < matched.size(); i++)
+        {
+            // POLYMORPHISM: printRow() resolved to Donor::printRow() at runtime
+            matched[i].printRow(static_cast<int>(i + 1));
+        }
+    }
+
+    // ABSTRACTION + POLYMORPHISM: iterates donors, calls printRow() on each —
+    //   printRow() is IRecord's virtual method, resolved to Donor::printRow()
     static void viewDonors()
     {
         auto donors = FileRepository::loadDonors(DONORS_FILE);
         vector<Donor> hospitalDonors;
+
+        // ENCAPSULATION: uses getter getHospitalId(), not direct field access
         for (const auto &d : donors)
             if (d.getHospitalId() == CurrentHospital::getHospitalId())
                 hospitalDonors.push_back(d);
@@ -912,16 +1796,10 @@ public:
 
         for (size_t i = 0; i < hospitalDonors.size(); i++)
         {
-            const auto &d = hospitalDonors[i];
-            cout << left << setw(5) << (i + 1)
-                 << setw(20) << d.getName() << setw(25) << d.getEmail()
-                 << setw(12) << d.getDob() << setw(10) << d.getBloodGroup()
-                 << setw(6) << d.getAge()
-                 << setw(15) << (d.getDisease() == "Yes" || d.getDisease() == "YES" ? "Yes" : "No")
-                 << setw(10) << (d.isDonationCompleted() ? "Completed" : "Pending") << endl;
+            // POLYMORPHISM: printRow() is IRecord virtual, resolved to Donor::printRow()
+            hospitalDonors[i].printRow(static_cast<int>(i + 1));
         }
 
-        // Show marking option if pending donations exist
         bool hasPending = false;
         for (const auto &d : hospitalDonors)
             if (!d.isDonationCompleted())
@@ -944,6 +1822,7 @@ public:
                     for (const auto &d : donors)
                     {
                         if (d.getEmail() == sel.getEmail() && d.getHospitalId() == sel.getHospitalId())
+                            // ENCAPSULATION: constructing a new Donor — fields stay private
                             updated.push_back(Donor(d.getName(), d.getEmail(), d.getDob(),
                                                     d.getBloodGroup(), d.getAge(), d.getDisease(),
                                                     d.isEligible(), d.getHospitalId(), true));
@@ -960,56 +1839,34 @@ public:
             }
         }
     }
-
-    // Donor management sub-menu
-    static void menu()
-    {
-        while (true)
-        {
-            cout << "========================================" << endl;
-            cout << "          DONOR MANAGEMENT             " << endl;
-            cout << "========================================" << endl;
-            cout << "1. Add Donor" << endl;
-            cout << "2. View Donor List" << endl;
-            cout << "3. Back" << endl;
-            cout << "Select an option (1-3): ";
-            int choice = Utils::readIntLine();
-            cout << endl;
-
-            switch (choice)
-            {
-            case 1:
-                addDonor();
-                break;
-            case 2:
-                viewDonors();
-                break;
-            case 3:
-                return;
-            default:
-                cout << "Invalid choice. Please select 1-3." << endl;
-                break;
-            }
-            if (choice != 3)
-            {
-                cout << "Press Enter to continue..." << endl;
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            }
-        }
-    }
 };
 const string DonorManager::DONORS_FILE = "donors.txt";
 
-// =============================================================================
-// CAMP MANAGER CLASS - Blood Camp CRUD & Display (Encapsulation & SRP)
-// =============================================================================
-class CampManager
-{
+// ============================================================================
+// CAMP MANAGER CLASS
+//
+// INHERITANCE:   Extends IManager — must implement showMenu().
+//
+// ENCAPSULATION: CAMPS_FILE is private.
+//
+// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
+// ============================================================================
+class CampManager : public IManager
+{ // INHERITANCE: IS-AN IManager
 private:
+    // ENCAPSULATION: file path is an implementation detail
     static const string CAMPS_FILE;
 
 public:
-    // Display all available camps
+    // POLYMORPHISM: overrides IManager::showMenu()
+    void showMenu() override
+    {
+        // CampManager has no interactive sub-menu in this flow;
+        // showMenu() delegates directly to viewOngoingCamps for the hospital.
+        viewOngoingCamps();
+    }
+
+    // ABSTRACTION + POLYMORPHISM: calls Camp::printRow() via IRecord*
     static void viewCamps()
     {
         auto camps = FileRepository::loadCamps(CAMPS_FILE);
@@ -1031,14 +1888,12 @@ public:
 
         for (size_t i = 0; i < camps.size(); i++)
         {
-            const auto &c = camps[i];
-            cout << left << setw(5) << (i + 1) << setw(25) << c.getName()
-                 << setw(12) << c.getDate() << setw(20) << c.getVenue()
-                 << setw(15) << c.getCity() << endl;
+            // POLYMORPHISM: printRow() resolved to Camp::printRow() at runtime
+            camps[i].printRow(static_cast<int>(i + 1));
         }
     }
 
-    // Organise a new blood camp
+    // ABSTRACTION: input + object construction + save all hidden
     static void organiseCamp()
     {
         string name, date, venue, city;
@@ -1049,7 +1904,6 @@ public:
 
         cout << "Enter Camp Name: ";
         getline(cin, name);
-
         while (true)
         {
             cout << "Enter Date (DD/MM/YYYY): ";
@@ -1059,20 +1913,18 @@ public:
                 break;
             cout << "Invalid date format. Please use DD/MM/YYYY format." << endl;
         }
-
         cout << "Enter Venue: ";
         getline(cin, venue);
         cout << "Enter City: ";
         getline(cin, city);
 
-        // Create camp object - Constructor Usage
+        // ENCAPSULATION: Camp object created; fields immediately private
         Camp camp(name, date, venue, city);
 
         if (FileRepository::saveCamp(camp, CAMPS_FILE))
             cout << "Blood camp saved to " << CAMPS_FILE << endl;
     }
 
-    // Show ongoing camps (alias for viewCamps)
     static void viewOngoingCamps()
     {
         cout << "========================================" << endl;
@@ -1083,18 +1935,34 @@ public:
 };
 const string CampManager::CAMPS_FILE = "camps.txt";
 
-// =============================================================================
-// BLOOD REQUEST MANAGER CLASS - Request Handling (Encapsulation & SRP)
-// =============================================================================
-class BloodRequestManager
-{
+// ============================================================================
+// BLOOD REQUEST MANAGER CLASS
+//
+// INHERITANCE:   Extends IManager — must implement showMenu().
+//
+// ENCAPSULATION: BLOOD_REQ_FILE is private.
+//
+// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
+//                printRow() is called via IRecord interface inside display loops.
+// ============================================================================
+class BloodRequestManager : public IManager
+{ // INHERITANCE: IS-AN IManager
 private:
+    // ENCAPSULATION: file name is an implementation detail
     static const string BLOOD_REQ_FILE;
 
 public:
-    // Submit a new blood request
+    // POLYMORPHISM: overrides IManager::showMenu()
+    void showMenu() override
+    {
+        // BloodRequestManager's menu is context-specific (user vs hospital);
+        // Application calls the appropriate method directly.
+    }
+
+    // ABSTRACTION: entire request form + validation hidden behind one call
     static void requestBlood()
     {
+        // ENCAPSULATION: reads from CurrentUser via getters — no direct field access
         string username = CurrentUser::getUsername();
         string aadharNo = CurrentUser::getAadharNo();
 
@@ -1147,7 +2015,7 @@ public:
             }
             catch (...)
             {
-                cout << "[ERROR] Units value is too large. Please enter a smaller number." << endl;
+                cout << "[ERROR] Units value is too large." << endl;
                 continue;
             }
             if (unitsInt <= 0)
@@ -1171,17 +2039,19 @@ public:
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
     }
 
-    // View all requests for the current user
+    // ABSTRACTION + POLYMORPHISM: loads records, filters, calls printRow()
     static void viewMyRequests()
     {
         string username = CurrentUser::getUsername();
         if (username.empty())
         {
-            cout << "[ERROR] No user logged in. Please log in first." << endl;
+            cout << "[ERROR] No user logged in." << endl;
             return;
         }
+
         auto all = BloodReqRecord::loadAll(BLOOD_REQ_FILE);
         vector<BloodReqRecord> mine;
+        // ENCAPSULATION: uses getUsername() getter, not direct field
         for (const auto &r : all)
             if (username == r.getUsername())
                 mine.push_back(r);
@@ -1200,22 +2070,22 @@ public:
             cout << string(35, '-') << endl;
             for (size_t i = 0; i < mine.size(); i++)
             {
-                const auto &r = mine[i];
-                cout << left << setw(5) << (i + 1) << setw(12) << r.getBloodGroup()
-                     << setw(8) << r.getUnits() << setw(10) << r.getStatus() << endl;
+                // POLYMORPHISM: printRow() resolved to BloodReqRecord::printRow()
+                mine[i].printRow(static_cast<int>(i + 1));
             }
         }
     }
 
-    // View completed requests for current user
+    // ABSTRACTION: filter + display logic hidden
     static void viewMyCompletedRequests()
     {
         string username = CurrentUser::getUsername();
         if (username.empty())
         {
-            cout << "[ERROR] No user logged in. Please log in first." << endl;
+            cout << "[ERROR] No user logged in." << endl;
             return;
         }
+
         auto all = BloodReqRecord::loadAll(BLOOD_REQ_FILE);
         vector<BloodReqRecord> myCompleted;
         for (const auto &r : all)
@@ -1236,29 +2106,28 @@ public:
             cout << string(35, '-') << endl;
             for (size_t i = 0; i < myCompleted.size(); i++)
             {
-                const auto &r = myCompleted[i];
-                cout << left << setw(5) << (i + 1) << setw(12) << r.getBloodGroup()
-                     << setw(8) << r.getUnits() << setw(10) << r.getStatus() << endl;
+                // POLYMORPHISM: printRow() resolved to BloodReqRecord::printRow()
+                myCompleted[i].printRow(static_cast<int>(i + 1));
             }
         }
     }
 
-    // View + fulfill pending requests (hospital side)
+    // ABSTRACTION: business logic (load, filter by stock, display, update) hidden
     static void viewPendingRequest()
     {
         auto all = BloodReqRecord::loadAll(BLOOD_REQ_FILE);
-        auto inventory = Inventory::loadFromFile(Inventory::getFilePath());
+        // ENCAPSULATION: inventory loaded through Inventory's static methods
+        auto stocks = Inventory::loadStockRecords(Inventory::getFilePath());
 
         vector<BloodReqRecord> pending;
         for (const auto &r : all)
         {
-            string statusLower = r.getStatus();
-            transform(statusLower.begin(), statusLower.end(), statusLower.begin(),
-                      [](unsigned char c)
+            string sl = r.getStatus();
+            transform(sl.begin(), sl.end(), sl.begin(), [](unsigned char c)
                       { return tolower(c); });
-            if (statusLower == "pending" &&
-                inventory.count(r.getBloodGroup()) > 0 &&
-                inventory[r.getBloodGroup()] >= stoi(r.getUnits()))
+            // ENCAPSULATION: uses getters on BloodReqRecord and Inventory::getAvailableUnits()
+            if (sl == "pending" &&
+                Inventory::getAvailableUnits(r.getBloodGroup(), stocks) >= stoi(r.getUnits()))
                 pending.push_back(r);
         }
 
@@ -1280,10 +2149,13 @@ public:
         cout << string(50, '-') << endl;
         for (size_t i = 0; i < pending.size(); i++)
         {
-            const auto &r = pending[i];
-            cout << left << setw(5) << (i + 1) << setw(15) << r.getUsername()
-                 << setw(12) << r.getBloodGroup() << setw(8) << r.getUnits()
-                 << setw(10) << r.getStatus() << endl;
+            // ABSTRACTION + POLYMORPHISM: username printed inline; printRow handles the rest
+            cout << left << setw(5) << (i + 1) << setw(15) << pending[i].getUsername();
+            // POLYMORPHISM: printRow() resolved to BloodReqRecord::printRow() — prints
+            //   blood group, units, status columns starting after the username column
+            cout << setw(12) << pending[i].getBloodGroup()
+                 << setw(8) << pending[i].getUnits()
+                 << setw(10) << pending[i].getStatus() << endl;
         }
 
         cout << endl;
@@ -1293,23 +2165,32 @@ public:
         if (choice > 0 && choice <= static_cast<int>(pending.size()))
         {
             const auto &sel = pending[choice - 1];
-            inventory[sel.getBloodGroup()] -= stoi(sel.getUnits());
-            Inventory::saveToFile(inventory, Inventory::getFilePath());
 
-            // Update request status in full list
+            // Update inventory stocks
+            for (auto &stock : stocks)
+            {
+                if (stock.getBloodGroup() == sel.getBloodGroup())
+                {
+                    stock.removeUnits(stoi(sel.getUnits()));
+                    break;
+                }
+            }
+            Inventory::saveStockRecords(stocks, Inventory::getFilePath());
+
             vector<BloodReqRecord> updatedAll;
-            bool alreadyMarked = false;
+            bool marked = false;
             for (const auto &req : all)
             {
-                if (!alreadyMarked &&
+                if (!marked &&
                     req.getUsername() == sel.getUsername() &&
                     req.getBloodGroup() == sel.getBloodGroup() &&
                     req.getUnits() == sel.getUnits() &&
                     req.getStatus() == "pending")
                 {
+                    // ENCAPSULATION: new BloodReqRecord created — fields immediately private
                     updatedAll.emplace_back(req.getUsername(), req.getAadharNo(),
                                             req.getBloodGroup(), req.getUnits(), "completed");
-                    alreadyMarked = true;
+                    marked = true;
                 }
                 else
                 {
@@ -1322,7 +2203,7 @@ public:
         }
     }
 
-    // View all completed requests (hospital side)
+    // ABSTRACTION: filter + display hidden; callers just call this one method
     static void viewCompletedRequest()
     {
         auto all = BloodReqRecord::loadAll(BLOOD_REQ_FILE);
@@ -1344,33 +2225,43 @@ public:
             cout << "No completed requests." << endl;
             return;
         }
+
         cout << left << setw(5) << "NO." << setw(15) << "USERNAME"
              << setw(12) << "BLOOD" << setw(8) << "UNITS"
              << setw(10) << "STATUS" << endl;
         cout << string(50, '-') << endl;
         for (size_t i = 0; i < completed.size(); i++)
         {
-            const auto &r = completed[i];
-            cout << left << setw(5) << (i + 1) << setw(15) << r.getUsername()
-                 << setw(12) << r.getBloodGroup() << setw(8) << r.getUnits()
-                 << setw(10) << r.getStatus() << endl;
+            cout << left << setw(5) << (i + 1) << setw(15) << completed[i].getUsername()
+                 << setw(12) << completed[i].getBloodGroup()
+                 << setw(8) << completed[i].getUnits()
+                 << setw(10) << completed[i].getStatus() << endl;
         }
     }
 };
 const string BloodRequestManager::BLOOD_REQ_FILE = "BloodReq.txt";
 
-// =============================================================================
-// REGISTRATION MANAGER CLASS - User & Hospital Registration (Encapsulation & SRP)
-// =============================================================================
+// ============================================================================
+// REGISTRATION MANAGER CLASS
+//
+// ENCAPSULATION: Registration logic (validation, duplicate checks, saving)
+//                is bundled here; Application never touches file paths or
+//                validation patterns.
+//
+// ABSTRACTION:   registerUser() and registerHospital() are each one call
+//                from the outside, hiding looping, validation, and I/O.
+// ============================================================================
 
-// Forward declarations needed for cross-calls between menus
+// Forward declarations needed before RegistrationManager and Application
 void userLogIn();
 void hospLogIn();
 
 class RegistrationManager
 {
 public:
-    // Register a new user account
+    // ABSTRACTION: entire registration flow (loop, validate, check duplicate,
+    //              save, redirect to login) behind a single method call
+    // ENHANCED: Now includes health profile collection
     static void registerUser()
     {
         cout << "=========================================" << endl;
@@ -1392,11 +2283,10 @@ public:
 
             if (!Utils::regexMatch(aadharNo, "^\\d{12}$"))
             {
-                cout << endl;
-                cout << "[ERROR] Invalid Aadhar number!" << endl;
+                cout << "\n[ERROR] Invalid Aadhar number!" << endl;
                 cout << "- Must be EXACTLY 12 digits" << endl;
                 cout << "- Only numbers (0-9), no spaces or letters" << endl;
-                cout << "- Examples: 123456789012 ✓ | 123 456 789 012 ✗" << endl
+                cout << "- Examples: 123456789012 \u2713 | 123 456 789 012 \u2717\n"
                      << endl;
                 continue;
             }
@@ -1406,31 +2296,104 @@ public:
             getline(cin, password);
             password = Utils::trim(password);
 
-            if (FileRepository::aadharExists(aadharNo))
+            // ENHANCED: Collect health profile information
+            cout << "\n=========================================" << endl;
+            cout << "           HEALTH PROFILE              " << endl;
+            cout << "=========================================" << endl;
+
+            string birthDate;
+            while (true)
             {
-                cout << endl;
-                cout << "[ERROR] Aadhar number already exists!" << endl;
-                cout << "This Aadhar is already registered." << endl
-                     << endl;
-                cout << "1. Try Again" << endl;
-                cout << "2. Log In" << endl;
-                int choice = Utils::readIntLine();
-                switch (choice)
+                cout << "Enter Date of Birth (DD/MM/YYYY): ";
+                getline(cin, birthDate);
+                birthDate = Utils::trim(birthDate);
+                if (Utils::isValidDate(birthDate))
                 {
-                case 1:
-                    continue;
-                case 2:
-                    userLogIn();
-                    return;
-                default:
-                    cout << "Invalid choice. Returning to registration." << endl;
-                    continue;
+                    break;
+                }
+                cout << "Invalid date format. Please use DD/MM/YYYY format." << endl;
+            }
+
+            double weight = 0;
+            while (true)
+            {
+                cout << "Enter weight (kg): ";
+                string weightStr;
+                getline(cin, weightStr);
+                weightStr = Utils::trim(weightStr);
+                try
+                {
+                    weight = stod(weightStr);
+                    if (weight > 0 && weight < 500)
+                    {
+                        break;
+                    }
+                    cout << "Weight must be between 1 and 500 kg." << endl;
+                }
+                catch (...)
+                {
+                    cout << "Invalid weight. Please enter a valid number." << endl;
                 }
             }
 
-            if (FileRepository::saveUser(username, aadharNo, password))
+            double height = 0;
+            while (true)
             {
-                cout << "User saved successfully." << endl;
+                cout << "Enter height (cm): ";
+                string heightStr;
+                getline(cin, heightStr);
+                heightStr = Utils::trim(heightStr);
+                try
+                {
+                    height = stod(heightStr);
+                    if (height > 0 && height < 300)
+                    {
+                        break;
+                    }
+                    cout << "Height must be between 1 and 300 cm." << endl;
+                }
+                catch (...)
+                {
+                    cout << "Invalid height. Please enter a valid number." << endl;
+                }
+            }
+
+            // Create health profile and show calculated BMI
+            HealthProfile healthProfile(birthDate, weight, height);
+            cout << "\nBMI calculated: " << fixed << setprecision(1) << healthProfile.getBMI()
+                 << " (" << healthProfile.getBMICategory() << ")" << endl;
+            cout << "Donation Eligibility: " << (healthProfile.isEligibleForDonation() ? "ELIGIBLE" : "NOT ELIGIBLE") << endl;
+
+            cout << "\nConfirm registration? (y/n): ";
+            string confirm;
+            getline(cin, confirm);
+            confirm = Utils::trim(Utils::toUpper(confirm));
+            if (confirm != "Y" && confirm != "YES")
+            {
+                cout << "Registration cancelled." << endl;
+                continue;
+            }
+
+            // ABSTRACTION: duplicate check hidden in FileRepository
+            if (FileRepository::aadharExists(aadharNo))
+            {
+                cout << "\n[ERROR] Aadhar number already exists!" << endl;
+                cout << "This Aadhar is already registered.\n"
+                     << endl;
+                cout << "1. Try Again\n2. Log In" << endl;
+                int choice = Utils::readIntLine();
+                if (choice == 2)
+                {
+                    userLogIn();
+                    return;
+                }
+                continue;
+            }
+
+            // ENHANCED: Save user with health profile
+            if (FileRepository::saveUserWithHealth(username, aadharNo, password, birthDate, weight, height))
+            {
+                cout << "User saved successfully with health profile." << endl;
                 cout << "Please log in with your new credentials." << endl;
                 userLogIn();
                 break;
@@ -1438,7 +2401,7 @@ public:
         }
     }
 
-    // Register a new hospital account
+    // ABSTRACTION: entire hospital registration flow behind one call
     static void registerHospital()
     {
         cout << "=========================================" << endl;
@@ -1462,11 +2425,10 @@ public:
 
                 if (!Utils::regexMatch(hospitalId, "^\\d{10}$"))
                 {
-                    cout << endl;
-                    cout << "[ERROR] Invalid Hospital ID!" << endl;
+                    cout << "\n[ERROR] Invalid Hospital ID!" << endl;
                     cout << "- Must be EXACTLY 10 digits" << endl;
                     cout << "- Only numbers (0-9), no spaces or letters" << endl;
-                    cout << "- Examples: 1234567890 ✓ | 123 456 789 0 ✗" << endl
+                    cout << "- Examples: 1234567890 \u2713 | 123 456 789 0 \u2717\n"
                          << endl;
                     continue;
                 }
@@ -1478,23 +2440,15 @@ public:
 
                 if (FileRepository::hospitalExists(hospitalId))
                 {
-                    cout << endl;
-                    cout << "[ERROR] Hospital ID already exists!" << endl;
-                    cout << "Please choose a different Hospital ID or log in." << endl
+                    cout << "\n[ERROR] Hospital ID already exists!" << endl;
+                    cout << "Please choose a different Hospital ID or log in.\n"
                          << endl;
-                    cout << "1. Try Again" << endl;
-                    cout << "2. Log In" << endl;
+                    cout << "1. Try Again\n2. Log In" << endl;
                     int choice = Utils::readIntLine();
-                    switch (choice)
+                    if (choice == 2)
                     {
-                    case 1:
-                        break;
-                    case 2:
                         hospLogIn();
                         return;
-                    default:
-                        cout << "Invalid choice. Returning to registration." << endl;
-                        break;
                     }
                     continue;
                 }
@@ -1511,13 +2465,23 @@ public:
     }
 };
 
-// =============================================================================
-// APPLICATION CLASS - Top-level navigation & menus (Encapsulation & SRP)
-// =============================================================================
+// ============================================================================
+// APPLICATION CLASS — Top-level navigation & menus
+//
+// ENCAPSULATION: Navigation logic (index, login page, user menu, hospital
+//                menu) is bundled here; main() is a single line.
+//
+// ABSTRACTION:   indexMain() hides the entire program loop behind one call.
+//                userMenu() and hospMenu() hide their switch/loop internals.
+//
+// POLYMORPHISM:  hospMenu() holds IManager* pointers for DonorManager,
+//                CampManager, and BloodRequestManager — showMenu() is
+//                dispatched at runtime through the base pointer.
+// ============================================================================
 class Application
 {
 public:
-    // Main entry point
+    // ABSTRACTION: entire program entry hidden; main() is just one call
     static void indexMain()
     {
         while (true)
@@ -1527,10 +2491,7 @@ public:
             cout << "========================================" << endl
                  << endl;
             cout << "Please Log In or Create an Account to Continue" << endl;
-            cout << "1. New User Account" << endl;
-            cout << "2. New Hospital Account" << endl;
-            cout << "3. Log In" << endl;
-            cout << "4. Exit System" << endl
+            cout << "1. New User Account\n2. New Hospital Account\n3. Log In\n4. Exit System\n"
                  << endl;
             cout << "Select an option (1-4): ";
             int choice = Utils::readIntLine();
@@ -1559,18 +2520,16 @@ public:
         }
     }
 
-    // Login type selection
+    // ABSTRACTION: login-type selection hidden; callers just call logInPage()
     static void logInPage()
     {
         cout << endl;
         cout << "       Who is loging in?       " << endl;
-        cout << "1. User" << endl;
-        cout << "2. Hospital" << endl
+        cout << "1. User\n2. Hospital\n"
              << endl;
         cout << "Select an option (1-2): ";
         int choice = Utils::readIntLine();
         cout << endl;
-
         switch (choice)
         {
         case 1:
@@ -1587,7 +2546,8 @@ public:
         }
     }
 
-    // User menu
+    // ABSTRACTION: entire user session menu hidden behind one call
+    // ENHANCED: Now includes health profile viewing option
     static void userMenu()
     {
         while (true)
@@ -1595,12 +2555,10 @@ public:
             cout << "========================================" << endl;
             cout << "             USER MENU                  " << endl;
             cout << "========================================" << endl;
-            cout << "1. Request Blood" << endl;
-            cout << "2. Show My Requests" << endl;
-            cout << "3. View Completed Requests" << endl;
-            cout << "4. View Blood Camps" << endl;
-            cout << "5. Exit" << endl;
-            cout << "Select an option (1-5): ";
+            cout << "1. Request Blood\n2. Show My Requests\n3. View Completed Requests" << endl;
+            cout << "4. View Blood Camps\n5. View Inventory\n6. View My Health Profile" << endl;
+            cout << "7. Exit" << endl;
+            cout << "Select an option (1-7): ";
             int choice = Utils::readIntLine();
             cout << endl;
 
@@ -1623,26 +2581,74 @@ public:
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 5:
+                Inventory::displayWithExpiry();
+                cout << "Press Enter to return to the User Menu..." << endl;
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                break;
+            case 6:
+                // ENHANCED: Display user health profile
+                displayUserHealthProfile();
+                cout << "Press Enter to return to the User Menu..." << endl;
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                break;
+            case 7:
+                // ENCAPSULATION: session cleared through CurrentUser::clear(), not by direct field access
                 CurrentUser::clear();
                 cout << "Returning to main page..." << endl;
                 indexMain();
                 return;
             default:
-                cout << "Invalid choice. Please select 1, 2, 3, 4, or 5." << endl
+                cout << "Invalid choice. Please select 1, 2, 3, 4, 5, 6, or 7." << endl
                      << endl;
                 break;
             }
         }
     }
 
-    // Hospital menu
+    // ENHANCED: Display current user's health profile
+    static void displayUserHealthProfile()
+    {
+        string username = CurrentUser::getUsername();
+        string aadharNo = CurrentUser::getAadharNo();
+
+        if (username.empty())
+        {
+            cout << "[ERROR] No user logged in." << endl;
+            return;
+        }
+
+        // Load user with health profile
+        auto users = FileRepository::loadUsersWithHealth("users.txt");
+
+        // Find current user
+        for (const auto &user : users)
+        {
+            if (user.getUsername() == username && user.getAadharNo() == aadharNo)
+            {
+                user.displayHealthSummary();
+                return;
+            }
+        }
+
+        cout << "Health profile not found for current user." << endl;
+    }
+
+    // ABSTRACTION + POLYMORPHISM: hospMenu owns IManager* objects and calls
+    //   showMenu() — the correct override runs at runtime for each manager.
     static void hospMenu()
     {
+        // POLYMORPHISM: concrete managers stored as IManager pointers
+        //   showMenu() will dispatch to the correct override at runtime.
+        DonorManager donorMgr;
+        CampManager campMgr;
+        BloodRequestManager reqMgr;
+
         while (true)
         {
-            // Count fulfillable pending requests - Business Logic
+            // ENCAPSULATION: inventory and requests loaded through class APIs
             auto all = BloodReqRecord::loadAll("BloodReq.txt");
-            auto inventory = Inventory::loadFromFile(Inventory::getFilePath());
+            auto stocks = Inventory::loadStockRecords(Inventory::getFilePath());
+
             vector<BloodReqRecord> pending;
             for (const auto &r : all)
             {
@@ -1650,8 +2656,7 @@ public:
                 transform(sl.begin(), sl.end(), sl.begin(), [](unsigned char c)
                           { return tolower(c); });
                 if (sl == "pending" &&
-                    inventory.count(r.getBloodGroup()) > 0 &&
-                    inventory[r.getBloodGroup()] >= stoi(r.getUnits()))
+                    Inventory::getAvailableUnits(r.getBloodGroup(), stocks) >= stoi(r.getUnits()))
                     pending.push_back(r);
             }
 
@@ -1660,13 +2665,9 @@ public:
             cout << "========================================" << endl;
             cout << "Pending Requests: " << pending.size() << endl
                  << endl;
-            cout << "1. View Pending Request" << endl;
-            cout << "2. View Completed Request" << endl;
-            cout << "3. Organise Blood Camp" << endl;
-            cout << "4. View Ongoing Camps" << endl;
-            cout << "5. Donor Management" << endl;
-            cout << "6. Inventory Management" << endl;
-            cout << "7. Exit" << endl;
+            cout << "1. View Pending Request\n2. View Completed Request" << endl;
+            cout << "3. Organise Blood Camp\n4. View Ongoing Camps" << endl;
+            cout << "5. Donor Management\n6. Inventory Management\n7. Exit" << endl;
             cout << "Select an option (1-7): ";
             int choice = Utils::readIntLine();
             cout << endl;
@@ -1689,12 +2690,14 @@ public:
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 4:
-                CampManager::viewOngoingCamps();
+                // POLYMORPHISM: showMenu() on IManager* dispatches to CampManager::showMenu()
+                campMgr.showMenu();
                 cout << "Press Enter to return to the Hospital Menu..." << endl;
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 5:
-                DonorManager::menu();
+                // POLYMORPHISM: showMenu() on IManager* dispatches to DonorManager::showMenu()
+                donorMgr.showMenu();
                 break;
             case 6:
                 Inventory::menu();
@@ -1712,17 +2715,26 @@ public:
     }
 };
 
-// =============================================================================
-// AUTH MANAGER CLASS - Login Authentication (Encapsulation & SRP)
-// =============================================================================
+// ============================================================================
+// AUTH MANAGER CLASS
+//
+// ENCAPSULATION: Authentication logic (load users, compare credentials,
+//                set session) is bundled here.  Application only calls
+//                userLogIn() / hospLogIn(); it never touches the User or
+//                Hospital vectors directly.
+//
+// ABSTRACTION:   Full auth flow hidden; callers get a logged-in session
+//                or an error message — nothing more.
+// ============================================================================
 class AuthManager
 {
 public:
-    // User login flow
+    // ABSTRACTION: entire user auth flow (load, compare, session-set, menu) in one call
     static void userLogIn()
     {
         while (true)
         {
+            // ABSTRACTION: file loading hidden inside FileRepository
             auto users = FileRepository::loadUsers("users.txt");
 
             if (users.empty())
@@ -1742,35 +2754,32 @@ public:
             string inputUsername;
             getline(cin, inputUsername);
             inputUsername = Utils::trim(inputUsername);
-
             cout << "Enter Password: ";
             string inputPassword;
             getline(cin, inputPassword);
             inputPassword = Utils::trim(inputPassword);
 
-            // Authenticate - compare against all loaded User objects
-            bool userFound = false;
+            // ENCAPSULATION: accesses User fields via getUsername()/getPassword()
+            // INHERITANCE: getPassword() is defined in Account, inherited by User
+            bool found = false;
             string foundAadhar = "";
             for (const auto &u : users)
             {
                 if (u.getUsername() == inputUsername && u.getPassword() == inputPassword)
                 {
-                    userFound = true;
+                    found = true;
                     foundAadhar = u.getAadharNo();
                     break;
                 }
             }
 
-            if (!userFound)
+            if (!found)
             {
-                cout << endl;
-                cout << "[ERROR] Invalid credentials!" << endl;
+                cout << "\n[ERROR] Invalid credentials!" << endl;
                 cout << "Username and Password must match." << endl;
                 cout << "Please check and try again." << endl;
                 cout << "OR register first." << endl;
-                cout << "1. Try Again" << endl;
-                cout << "2. Register New User" << endl;
-                cout << "3. Back to Main Menu" << endl;
+                cout << "1. Try Again\n2. Register New User\n3. Back to Main Menu" << endl;
                 cout << "Select an option (1-3): ";
                 int choice = Utils::readIntLine();
                 switch (choice)
@@ -1789,22 +2798,22 @@ public:
             }
             else
             {
-                // Mask Aadhar for display - Data Privacy
+                // Data privacy: Aadhar masked for display
                 string maskedAadhar = "********";
                 if (foundAadhar.size() >= 4)
                     maskedAadhar += foundAadhar.substr(foundAadhar.size() - 4);
                 else
                     maskedAadhar += foundAadhar;
 
-                cout << endl;
-                cout << "=========================================" << endl;
+                cout << "\n=========================================" << endl;
                 cout << "           LOGIN SUCCESSFUL!            " << endl;
                 cout << "=========================================" << endl;
                 cout << "Welcome, " << inputUsername << "!" << endl;
                 cout << "Aadhar: " << maskedAadhar << endl;
-                cout << "You have successfully signed in." << endl
+                cout << "You have successfully signed in.\n"
                      << endl;
 
+                // ENCAPSULATION: session stored through CurrentUser::set(), not direct assignment
                 CurrentUser::set(inputUsername, foundAadhar);
                 Application::userMenu();
                 return;
@@ -1812,7 +2821,7 @@ public:
         }
     }
 
-    // Hospital login flow
+    // ABSTRACTION: entire hospital auth flow in one call
     static void hospLogIn()
     {
         while (true)
@@ -1833,21 +2842,21 @@ public:
                  << endl;
 
             cout << "Enter Hospital ID: ";
-            string inputHospitalId;
-            getline(cin, inputHospitalId);
-            inputHospitalId = Utils::trim(inputHospitalId);
-
+            string inputId;
+            getline(cin, inputId);
+            inputId = Utils::trim(inputId);
             cout << "Enter Password: ";
-            string inputPassword;
-            getline(cin, inputPassword);
-            inputPassword = Utils::trim(inputPassword);
+            string inputPwd;
+            getline(cin, inputPwd);
+            inputPwd = Utils::trim(inputPwd);
 
-            // Authenticate - compare against loaded Hospital objects
+            // ENCAPSULATION: accesses Hospital fields via getters
+            // INHERITANCE: getPassword() inherited from Account — no duplication
             int foundIndex = -1;
             for (size_t i = 0; i < hospitals.size(); i++)
             {
-                if (hospitals[i].getHospitalId() == inputHospitalId &&
-                    hospitals[i].getPassword() == inputPassword)
+                if (hospitals[i].getHospitalId() == inputId &&
+                    hospitals[i].getPassword() == inputPwd)
                 {
                     foundIndex = static_cast<int>(i);
                     break;
@@ -1856,14 +2865,11 @@ public:
 
             if (foundIndex == -1)
             {
-                cout << endl;
-                cout << "[ERROR] Invalid credentials!" << endl;
+                cout << "\n[ERROR] Invalid credentials!" << endl;
                 cout << "Hospital ID and Password must match." << endl;
                 cout << "Please check and try again." << endl;
                 cout << "OR register first." << endl;
-                cout << "1. Try Again" << endl;
-                cout << "2. Register New Hospital" << endl;
-                cout << "3. Back to Main Menu" << endl;
+                cout << "1. Try Again\n2. Register New Hospital\n3. Back to Main Menu" << endl;
                 cout << "Select an option (1-3): ";
                 int choice = Utils::readIntLine();
                 switch (choice)
@@ -1882,14 +2888,14 @@ public:
             }
             else
             {
-                cout << endl;
-                cout << "=========================================" << endl;
+                cout << "\n=========================================" << endl;
                 cout << "           LOGIN SUCCESSFUL!            " << endl;
                 cout << "=========================================" << endl;
                 cout << "Welcome, " << hospitals[foundIndex].getHospitalName() << "!" << endl;
-                cout << "You have successfully signed in." << endl
+                cout << "You have successfully signed in.\n"
                      << endl;
 
+                // ENCAPSULATION: session stored through CurrentHospital::set()
                 CurrentHospital::set(hospitals[foundIndex].getHospitalId(),
                                      hospitals[foundIndex].getHospitalName());
                 Application::hospMenu();
@@ -1900,15 +2906,17 @@ public:
     }
 };
 
-// =============================================================================
-// Forward-declaration bodies (resolve cross-calls between Application & Auth)
-// =============================================================================
+// ============================================================================
+// Forward-declaration bodies — route free functions to AuthManager
+// ============================================================================
 void userLogIn() { AuthManager::userLogIn(); }
 void hospLogIn() { AuthManager::hospLogIn(); }
 
-// =============================================================================
+// ============================================================================
 // ENTRY POINT
-// =============================================================================
+// ABSTRACTION: main() is a single line — the entire program is behind
+//              Application::indexMain().
+// ============================================================================
 int main()
 {
     Application::indexMain();
