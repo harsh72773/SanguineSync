@@ -2790,6 +2790,7 @@ public:
                     RegistrationManager::registerUser();
                     return;
                 case 3:
+                    Application::indexMain();
                     return;
                 default:
                     cout << "Invalid choice. Returning to main menu." << endl;
@@ -2880,6 +2881,7 @@ public:
                     RegistrationManager::registerHospital();
                     return;
                 case 3:
+                    Application::indexMain();
                     return;
                 default:
                     cout << "Invalid choice. Returning to main menu." << endl;
