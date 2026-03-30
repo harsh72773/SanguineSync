@@ -24,7 +24,7 @@
 //  4. POLYMORPHISM   - IRecord::printRow()  overridden by each record class
 //                      IRecord::toCSV()     overridden by each record class
 //                      IManager::showMenu() overridden by each manager class
-//                      Runtime dispatch used in displayRecords<T>() helper.
+//                      Runtime dispatch via base pointers in manager loops.
 // ============================================================================
 
 #include <algorithm>
@@ -38,9 +38,6 @@
 #include <limits>
 #include <iomanip>
 #include <cstring>
-#include <chrono>
-#include <ctime>
-#include <cmath>
 #include <sstream>
 
 using namespace std;
@@ -126,103 +123,6 @@ public:
         if (start < line.size())
             parts.push_back(trim(line.substr(start)));
         return parts;
-    }
-};
-
-// ============================================================================
-// DATE UTILS CLASS - Date/Time Operations and Blood Expiry Management
-//
-// ENCAPSULATION: All date/time logic is hidden inside static methods
-// ABSTRACTION: Complex date calculations are hidden behind simple method calls
-// ============================================================================
-class DateUtils
-{
-public:
-    // ABSTRACTION: Current date retrieval hidden behind simple method call
-    static string getCurrentDate()
-    {
-        auto now = chrono::system_clock::now();
-        auto time_t_val = chrono::system_clock::to_time_t(now);
-        tm tm_local;
-
-        // Use standard localtime for cross-platform compatibility
-        tm_local = *localtime(&time_t_val);
-
-        char buffer[11];
-        strftime(buffer, sizeof(buffer), "%d/%m/%Y", &tm_local);
-        return string(buffer);
-    }
-
-    // ABSTRACTION: Date addition logic hidden - just call addDays()
-    static string addDays(const string &date, int days)
-    {
-        // Parse DD/MM/YYYY to tm structure using stringstream
-        stringstream ss(date);
-        char slash;
-        int day, month, year;
-        ss >> day >> slash >> month >> slash >> year;
-
-        tm tm_date = {};
-        tm_date.tm_mday = day;
-        tm_date.tm_mon = month - 1;    // Adjust month (0-11)
-        tm_date.tm_year = year - 1900; // Adjust year
-        tm_date.tm_hour = 0;
-        tm_date.tm_min = 0;
-        tm_date.tm_sec = 0;
-
-        // Convert to time_t, add days, convert back
-        auto time = mktime(&tm_date);
-        time += days * 24 * 60 * 60; // Add days in seconds
-
-        // Use standard localtime for cross-platform compatibility
-        tm tm_result = *localtime(&time);
-
-        char buffer[11];
-        strftime(buffer, sizeof(buffer), "%d/%m/%Y", &tm_result);
-        return string(buffer);
-    }
-
-    // ABSTRACTION: Date comparison logic hidden - just call isExpired()
-    static bool isExpired(const string &expiryDate)
-    {
-        string current = getCurrentDate();
-        return compareDates(expiryDate, current) < 0;
-    }
-
-    // ABSTRACTION: Date parsing and comparison hidden behind simple method
-    static int compareDates(const string &date1, const string &date2)
-    {
-        tm tm1 = {}, tm2 = {};
-
-        // Parse date1 using stringstream
-        stringstream ss1(date1);
-        char slash1;
-        int day1, month1, year1;
-        ss1 >> day1 >> slash1 >> month1 >> slash1 >> year1;
-        tm1.tm_mday = day1;
-        tm1.tm_mon = month1 - 1;
-        tm1.tm_year = year1 - 1900;
-
-        // Parse date2 using stringstream
-        stringstream ss2(date2);
-        char slash2;
-        int day2, month2, year2;
-        ss2 >> day2 >> slash2 >> month2 >> slash2 >> year2;
-        tm2.tm_mday = day2;
-        tm2.tm_mon = month2 - 1;
-        tm2.tm_year = year2 - 1900;
-
-        time_t time1 = mktime(&tm1);
-        time_t time2 = mktime(&tm2);
-
-        return (time1 < time2) ? -1 : (time1 > time2) ? 1
-                                                      : 0;
-    }
-
-    // ABSTRACTION: Blood expiry calculation (42 days) hidden
-    static string getBloodExpiryDate(const string &collectionDate)
-    {
-        return addDays(collectionDate, 42); // Blood expires after 42 days
     }
 };
 
@@ -826,82 +726,6 @@ public:
 };
 
 // ============================================================================
-// BLOOD STOCK RECORD CLASS - Individual blood stock with expiry
-//
-// ENCAPSULATION: All blood stock data is private with controlled access
-// INHERITANCE: Extends IRecord for polymorphic display capabilities
-// ============================================================================
-class BloodStockRecord : public IRecord
-{
-private:
-    // ENCAPSULATION: Private blood stock fields
-    string bloodGroup;
-    int units;
-    string collectionDate;
-    string expiryDate;
-
-public:
-    // Constructor with automatic expiry calculation
-    BloodStockRecord(const string &bg, int u, const string &cDate)
-        : bloodGroup(bg), units(u), collectionDate(cDate)
-    {
-        // ABSTRACTION: Expiry calculation hidden in DateUtils
-        expiryDate = DateUtils::getBloodExpiryDate(collectionDate);
-    }
-
-    // ENCAPSULATION: Getters for controlled access
-    string getBloodGroup() const { return bloodGroup; }
-    int getUnits() const { return units; }
-    string getCollectionDate() const { return collectionDate; }
-    string getExpiryDate() const { return expiryDate; }
-
-    // ABSTRACTION: Expiry status check hidden behind simple method
-    bool isExpired() const
-    {
-        return DateUtils::isExpired(expiryDate);
-    }
-
-    // ENCAPSULATION: Safe unit modification with validation
-    bool addUnits(int u)
-    {
-        if (u > 0)
-        {
-            units += u;
-            return true;
-        }
-        return false;
-    }
-
-    bool removeUnits(int u)
-    {
-        if (u > 0 && units >= u)
-        {
-            units -= u;
-            return true;
-        }
-        return false;
-    }
-
-    // POLYMORPHISM: Implementation of IRecord interface
-    void printRow(int index) const override
-    {
-        cout << left << setw(5) << index
-             << setw(10) << bloodGroup
-             << setw(12) << collectionDate
-             << setw(12) << expiryDate
-             << setw(8) << units
-             << setw(10) << (isExpired() ? "EXPIRED" : "VALID") << endl;
-    }
-
-    // POLYMORPHISM: CSV serialization for blood stock
-    string toCSV() const override
-    {
-        return bloodGroup + "," + to_string(units) + "," +
-               collectionDate + "," + expiryDate;
-    }
-};
-
-// ============================================================================
 // INVENTORY CLASS
 //
 // ENCAPSULATION: VALID_BLOOD_GROUPS is a class-level constant — not a global.
@@ -934,13 +758,13 @@ public:
                            : "textFiles/inventory_" + hid + ".txt";
     }
 
-    // ABSTRACTION: Enhanced loading with expiry dates
-    static vector<BloodStockRecord> loadStockRecords(const string &filename)
+    // ABSTRACTION: file parsing hidden; returns map of blood group -> units
+    static map<string, int> loadStock(const string &filename)
     {
-        vector<BloodStockRecord> stocks;
+        map<string, int> stock;
         ifstream in(filename);
         if (!in.is_open())
-            return stocks;
+            return stock;
 
         string line;
         while (getline(in, line))
@@ -948,30 +772,23 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-
-            vector<string> parts = Utils::splitCSV(line, 4);
+            vector<string> parts = Utils::splitCSV(line, 2);
             if (parts.size() >= 2 && isValidBloodGroup(parts[0]))
             {
                 try
                 {
-                    int units = stoi(parts[1]);
-                    string collectionDate = parts.size() > 2 ? parts[2] : DateUtils::getCurrentDate();
-
-                    // Create blood stock record with automatic expiry calculation
-                    BloodStockRecord stock(parts[0], units, collectionDate);
-                    stocks.push_back(stock);
+                    stock[parts[0]] = stoi(parts[1]);
                 }
                 catch (...)
                 {
-                    // Skip invalid records
                 }
             }
         }
-        return stocks;
+        return stock;
     }
 
-    // ABSTRACTION: Enhanced saving with expiry dates
-    static bool saveStockRecords(const vector<BloodStockRecord> &stocks, const string &filename)
+    // ABSTRACTION: file writing hidden; callers just call saveStock()
+    static bool saveStock(const map<string, int> &stock, const string &filename)
     {
         ofstream out(filename, ios::trunc);
         if (!out.is_open())
@@ -979,97 +796,37 @@ public:
             cout << "[ERROR] Could not save to " << filename << endl;
             return false;
         }
-
-        for (const auto &stock : stocks)
-        {
-            out << stock.toCSV() << endl;
-        }
+        for (const auto &entry : stock)
+            out << entry.first << "," << entry.second << "\n";
         out.flush();
         return true;
     }
 
-    // ABSTRACTION: Get available units (non-expired)
-    static int getAvailableUnits(const string &bloodGroup, const vector<BloodStockRecord> &stocks)
+    // ABSTRACTION: unit lookup hidden; callers get an int
+    static int getAvailableUnits(const string &bloodGroup, const map<string, int> &stock)
     {
-        int available = 0;
-        for (const auto &stock : stocks)
-        {
-            if (stock.getBloodGroup() == bloodGroup && !stock.isExpired())
-            {
-                available += stock.getUnits();
-            }
-        }
-        return available;
+        auto it = stock.find(bloodGroup);
+        return it != stock.end() ? it->second : 0;
     }
 
-    // ABSTRACTION: Get expired blood stocks
-    static vector<BloodStockRecord> getExpiredStocks(const vector<BloodStockRecord> &stocks)
+    // ABSTRACTION: display logic hidden; callers just call display()
+    static void display()
     {
-        vector<BloodStockRecord> expired;
-        for (const auto &stock : stocks)
-        {
-            if (stock.isExpired())
-                expired.push_back(stock);
-        }
-        return expired;
-    }
-
-    // ABSTRACTION: Display expired blood stocks
-    static void displayExpiredStocks(const vector<BloodStockRecord> &expired)
-    {
-        cout << "========================================" << endl;
-        cout << "           EXPIRED BLOOD STOCKS         " << endl;
-        cout << "========================================" << endl;
-
-        if (expired.empty())
-        {
-            cout << "No expired blood stocks found." << endl;
-            return;
-        }
-
-        cout << left << setw(5) << "NO." << setw(10) << "BLOOD"
-             << setw(12) << "COLLECTED" << setw(12) << "EXPIRES"
-             << setw(8) << "UNITS" << setw(10) << "STATUS" << endl;
-        cout << string(57, '-') << endl;
-
-        for (size_t i = 0; i < expired.size(); i++)
-        {
-            expired[i].printRow(static_cast<int>(i + 1));
-        }
-    }
-
-    // ABSTRACTION: Enhanced display with expiry information
-    static void displayWithExpiry()
-    {
-        auto stocks = loadStockRecords(getFilePath());
+        auto stock = loadStock(getFilePath());
         cout << "========================================" << endl;
         cout << "             BLOOD INVENTORY            " << endl;
         cout << "========================================" << endl;
-        cout << left << setw(5) << "NO." << setw(10) << "BLOOD"
-             << setw(12) << "COLLECTED" << setw(12) << "EXPIRES"
-             << setw(8) << "UNITS" << setw(10) << "STATUS" << endl;
-        cout << string(57, '-') << endl;
+        cout << left << setw(5) << "NO." << setw(10) << "BLOOD GROUP"
+             << setw(10) << "UNITS" << endl;
+        cout << string(25, '-') << endl;
 
         int idx = 1;
         for (const auto &g : VALID_BLOOD_GROUPS)
         {
-            bool found = false;
-            for (const auto &stock : stocks)
-            {
-                if (stock.getBloodGroup() == g)
-                {
-                    stock.printRow(idx++);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-            {
-                // Show zero stock for missing blood groups
-                cout << left << setw(5) << idx++ << setw(10) << g
-                     << setw(12) << "N/A" << setw(12) << "N/A"
-                     << setw(8) << "0" << setw(10) << "NO STOCK" << endl;
-            }
+            auto it = stock.find(g);
+            int units = (it != stock.end()) ? it->second : 0;
+            cout << left << setw(5) << idx++ << setw(10) << g
+                 << setw(10) << units << endl;
         }
     }
 
@@ -1084,10 +841,8 @@ public:
             cout << "1. Add Stock" << endl;
             cout << "2. Remove Stock" << endl;
             cout << "3. View Inventory" << endl;
-            cout << "4. View Expired Blood" << endl;
-            cout << "5. Delete Expired Blood" << endl;
-            cout << "6. Back" << endl;
-            cout << "Select an option (1-6): ";
+            cout << "4. Back" << endl;
+            cout << "Select an option (1-4): ";
             int choice = Utils::readIntLine();
             cout << endl;
 
@@ -1117,101 +872,43 @@ public:
                     continue;
                 }
 
-                // Load existing stocks
-                auto stocks = loadStockRecords(getFilePath());
+                auto stock = loadStock(getFilePath());
 
-                // Find or create stock record for this blood group
-                bool found = false;
-                for (auto &stock : stocks)
+                if (choice == 1)
                 {
-                    if (stock.getBloodGroup() == group)
-                    {
-                        if (choice == 1)
-                        {
-                            stock.addUnits(units);
-                            cout << units << " units added to " << group << "." << endl;
-                        }
-                        else
-                        {
-                            if (stock.getUnits() >= units)
-                            {
-                                stock.removeUnits(units);
-                                cout << units << " units removed from " << group << "." << endl;
-                            }
-                            else
-                            {
-                                cout << "Not enough stock available for " << group << "." << endl;
-                            }
-                        }
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found && choice == 1)
-                {
-                    // Create new stock record with current date
-                    BloodStockRecord newStock(group, units, DateUtils::getCurrentDate());
-                    stocks.push_back(newStock);
+                    stock[group] += units;
                     cout << units << " units added to " << group << "." << endl;
-                }
-
-                // Save updated stocks
-                saveStockRecords(stocks, getFilePath());
-            }
-            else if (choice == 3)
-            {
-                displayWithExpiry();
-            }
-            else if (choice == 4)
-            {
-                auto stocks = loadStockRecords(getFilePath());
-                auto expired = getExpiredStocks(stocks);
-                displayExpiredStocks(expired);
-            }
-            else if (choice == 5)
-            {
-                cout << "Removing expired blood stocks..." << endl;
-                auto stocks = loadStockRecords(getFilePath());
-
-                // Remove expired stocks
-                auto it = stocks.begin();
-                int removedCount = 0;
-                while (it != stocks.end())
-                {
-                    if (it->isExpired())
-                    {
-                        cout << "Removing expired stock: " << it->getBloodGroup()
-                             << " (" << it->getUnits() << " units)" << endl;
-                        it = stocks.erase(it);
-                        removedCount++;
-                    }
-                    else
-                    {
-                        ++it;
-                    }
-                }
-
-                if (removedCount > 0)
-                {
-                    saveStockRecords(stocks, getFilePath());
-                    cout << "Removed " << removedCount << " expired stock records." << endl;
                 }
                 else
                 {
-                    cout << "No expired stocks to remove." << endl;
+                    int current = getAvailableUnits(group, stock);
+                    if (current >= units)
+                    {
+                        stock[group] = current - units;
+                        cout << units << " units removed from " << group << "." << endl;
+                    }
+                    else
+                    {
+                        cout << "Not enough stock available for " << group << "." << endl;
+                    }
                 }
+
+                saveStock(stock, getFilePath());
             }
-            else if (choice == 6)
+            else if (choice == 3)
+            {
+                display();
+            }
+            else if (choice == 4)
             {
                 return;
             }
             else
             {
-                cout << "Invalid choice. Please select 1-6." << endl;
+                cout << "Invalid choice. Please select 1-4." << endl;
             }
 
-            if (choice != 6)
+            if (choice != 4)
             {
                 cout << "Press Enter to continue..." << endl;
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -2117,7 +1814,7 @@ public:
     {
         auto all = BloodReqRecord::loadAll(BLOOD_REQ_FILE);
         // ENCAPSULATION: inventory loaded through Inventory's static methods
-        auto stocks = Inventory::loadStockRecords(Inventory::getFilePath());
+        auto stock = Inventory::loadStock(Inventory::getFilePath());
 
         vector<BloodReqRecord> pending;
         for (const auto &r : all)
@@ -2127,7 +1824,7 @@ public:
                       { return tolower(c); });
             // ENCAPSULATION: uses getters on BloodReqRecord and Inventory::getAvailableUnits()
             if (sl == "pending" &&
-                Inventory::getAvailableUnits(r.getBloodGroup(), stocks) >= stoi(r.getUnits()))
+                Inventory::getAvailableUnits(r.getBloodGroup(), stock) >= stoi(r.getUnits()))
                 pending.push_back(r);
         }
 
@@ -2166,16 +1863,11 @@ public:
         {
             const auto &sel = pending[choice - 1];
 
-            // Update inventory stocks
-            for (auto &stock : stocks)
-            {
-                if (stock.getBloodGroup() == sel.getBloodGroup())
-                {
-                    stock.removeUnits(stoi(sel.getUnits()));
-                    break;
-                }
-            }
-            Inventory::saveStockRecords(stocks, Inventory::getFilePath());
+            // Deduct from inventory
+            int requested = stoi(sel.getUnits());
+            int current = Inventory::getAvailableUnits(sel.getBloodGroup(), stock);
+            stock[sel.getBloodGroup()] = current - requested;
+            Inventory::saveStock(stock, Inventory::getFilePath());
 
             vector<BloodReqRecord> updatedAll;
             bool marked = false;
@@ -2508,7 +2200,7 @@ public:
             case 3:
                 cout << "========================================" << endl;
                 logInPage();
-                return;
+                break;
             case 4:
                 cout << "Exiting system..." << endl;
                 exit(0);
@@ -2581,7 +2273,7 @@ public:
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 5:
-                Inventory::displayWithExpiry();
+                Inventory::display();
                 cout << "Press Enter to return to the User Menu..." << endl;
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
@@ -2647,7 +2339,7 @@ public:
         {
             // ENCAPSULATION: inventory and requests loaded through class APIs
             auto all = BloodReqRecord::loadAll("BloodReq.txt");
-            auto stocks = Inventory::loadStockRecords(Inventory::getFilePath());
+            auto stock = Inventory::loadStock(Inventory::getFilePath());
 
             vector<BloodReqRecord> pending;
             for (const auto &r : all)
@@ -2656,7 +2348,7 @@ public:
                 transform(sl.begin(), sl.end(), sl.begin(), [](unsigned char c)
                           { return tolower(c); });
                 if (sl == "pending" &&
-                    Inventory::getAvailableUnits(r.getBloodGroup(), stocks) >= stoi(r.getUnits()))
+                    Inventory::getAvailableUnits(r.getBloodGroup(), stock) >= stoi(r.getUnits()))
                     pending.push_back(r);
             }
 
@@ -2790,7 +2482,6 @@ public:
                     RegistrationManager::registerUser();
                     return;
                 case 3:
-                    Application::indexMain();
                     return;
                 default:
                     cout << "Invalid choice. Returning to main menu." << endl;
@@ -2879,9 +2570,8 @@ public:
                     continue;
                 case 2:
                     RegistrationManager::registerHospital();
-                    return;
+                    break;
                 case 3:
-                    Application::indexMain();
                     return;
                 default:
                     cout << "Invalid choice. Returning to main menu." << endl;
