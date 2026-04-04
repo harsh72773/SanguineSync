@@ -2248,9 +2248,9 @@ public:
             cout << "             USER MENU                  " << endl;
             cout << "========================================" << endl;
             cout << "1. Request Blood\n2. Show My Requests\n3. View Completed Requests" << endl;
-            cout << "4. View Blood Camps\n5. View Inventory\n6. View My Health Profile" << endl;
-            cout << "7. Exit" << endl;
-            cout << "Select an option (1-7): ";
+            cout << "4. View Blood Camps\n5. View My Health Profile" << endl;
+            cout << "6. Exit" << endl;
+            cout << "Select an option (1-6): ";
             int choice = Utils::readIntLine();
             cout << endl;
 
@@ -2273,17 +2273,12 @@ public:
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
             case 5:
-                Inventory::display();
-                cout << "Press Enter to return to the User Menu..." << endl;
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                break;
-            case 6:
                 // ENHANCED: Display user health profile
                 displayUserHealthProfile();
                 cout << "Press Enter to return to the User Menu..." << endl;
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 break;
-            case 7:
+            case 6:
                 // ENCAPSULATION: session cleared through CurrentUser::clear(), not by direct field access
                 CurrentUser::clear();
                 cout << "Returning to main page..." << endl;
