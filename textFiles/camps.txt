@@ -12,3 +12,4 @@ Diwali Blood Donation,10/11/2024,Medanta Hospital,Gurgaon
 Winter Camp,20/12/2024,Apollo Delhi,Delhi
 New Year Drive,05/01/2025,Fortis Hospital,Mumbai
 Republic Day Camp,26/01/2025,Max Healthcare,Chennai
+BloodCamp,12/04/2026,WCE,Sangli
