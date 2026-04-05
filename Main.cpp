@@ -1,7 +1,5 @@
-//
 // ============================================================================
 //  SANGUINE SYNC - Blood Bank Management System
-//  OOP Design: All four pillars are used throughout this file.
 //
 //  PILLAR SUMMARY
 //  --------------
@@ -59,17 +57,9 @@
 using namespace std;
 
 // ============================================================================
-// ============================================================================
 //  SECTION 1 — HELPER CLASSES
 //  These provide utilities, data models, session state, and file I/O that
 //  every output class depends on.
-// ============================================================================
-// ============================================================================
-
-// ============================================================================
-// UTILS CLASS
-// ABSTRACTION: Wraps all low-level string helpers so no other class ever
-//              duplicates this logic or exposes raw implementation.
 // ============================================================================
 class Utils
 {
@@ -150,20 +140,14 @@ public:
     }
 };
 
-// ============================================================================
-// HEALTH PROFILE CLASS — User's Health Information
-//
-// ENCAPSULATION: All health data is private with controlled access.
-// ABSTRACTION:   BMI calculation is hidden behind getBMI().
-// ============================================================================
 class HealthProfile
 {
 private:
     // ENCAPSULATION: Private health data fields
     string birthDate;
-    double weight; // in kg
-    double height; // in cm
-    double bmi;    // calculated BMI
+    double weight;
+    double height;
+    double bmi;
 
     // ABSTRACTION: BMI calculation logic is private and hidden
     double calculateBMI() const
@@ -223,17 +207,6 @@ public:
     }
 };
 
-// ============================================================================
-// IRECORD — ABSTRACT BASE CLASS (Interface for all data records)
-//
-// ABSTRACTION:  Declares what every record must be able to do, without
-//               specifying how. Callers work against this interface only.
-//
-// INHERITANCE:  BloodReqRecord, Donor, and Camp all inherit from IRecord.
-//
-// POLYMORPHISM: printRow() and toCSV() are pure virtual — each derived class
-//               provides its own implementation, resolved at runtime.
-// ============================================================================
 class IRecord
 {
 public:
@@ -250,15 +223,6 @@ public:
     virtual ~IRecord() {}
 };
 
-// ============================================================================
-// ACCOUNT — BASE CLASS (shared by User and Hospital)
-//
-// ENCAPSULATION: password is protected, not public — derived classes can
-//                read it but callers cannot bypass getPassword().
-//
-// INHERITANCE:   User and Hospital both extend Account and inherit
-//                password storage + getPassword() without duplicating code.
-// ============================================================================
 class Account
 {
 protected:
@@ -279,17 +243,6 @@ public:
     virtual ~Account() {}
 };
 
-// ============================================================================
-// USER CLASS
-//
-// INHERITANCE:   Inherits password field and getPassword()/setPassword()
-//                from Account — no duplication.
-//
-// ENCAPSULATION: username, aadharNo, and healthProfile are private.
-//                Health data is accessed through controlled methods.
-//
-// COMPOSITION:   User HAS-A HealthProfile — demonstrates composition.
-// ============================================================================
 class User : public Account
 {
 private:
@@ -411,14 +364,6 @@ public:
     }
 };
 
-// ============================================================================
-// HOSPITAL CLASS
-//
-// INHERITANCE:   Inherits password field and getPassword()/setPassword()
-//                from Account.
-//
-// ENCAPSULATION: hospitalId and hospitalName are private.
-// ============================================================================
 class Hospital : public Account
 {
 private:
@@ -435,13 +380,6 @@ public:
     string getHospitalName() const { return hospitalName; }
 };
 
-// ============================================================================
-// CURRENT USER SESSION — Singleton-style static state
-//
-// ENCAPSULATION: username and aadharNo are private static fields.
-//                External code can only read/write through set(), clear(),
-//                and the getters.
-// ============================================================================
 class CurrentUser
 {
 private:
@@ -465,11 +403,6 @@ public:
 string CurrentUser::username = "";
 string CurrentUser::aadharNo = "";
 
-// ============================================================================
-// CURRENT HOSPITAL SESSION — Same pattern as CurrentUser
-//
-// ENCAPSULATION: both fields private static; all access through methods.
-// ============================================================================
 class CurrentHospital
 {
 private:
@@ -493,15 +426,6 @@ public:
 string CurrentHospital::hospitalId = "";
 string CurrentHospital::hospitalName = "";
 
-// ============================================================================
-// INVENTORY CLASS
-//
-// ENCAPSULATION: VALID_BLOOD_GROUPS is a class-level constant.
-//                All file paths, load/save logic, and validation are hidden
-//                inside static methods.
-//
-// ABSTRACTION:   menu() hides the entire add/remove/view loop behind one call.
-// ============================================================================
 class Inventory
 {
 public:
@@ -680,16 +604,6 @@ public:
 };
 const vector<string> Inventory::VALID_BLOOD_GROUPS = {"A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"};
 
-// ============================================================================
-// BLOOD REQUEST RECORD CLASS
-//
-// INHERITANCE:   Extends IRecord — inherits the printRow/toCSV contract.
-//
-// ENCAPSULATION: All five fields are private; status is set on construction
-//                and updated only through a full record replacement.
-//
-// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals.
-// ============================================================================
 class BloodReqRecord : public IRecord
 {
 private:
@@ -776,17 +690,6 @@ public:
     }
 };
 
-// ============================================================================
-// DONOR CLASS
-//
-// INHERITANCE:   Extends IRecord — must implement printRow() and toCSV().
-//
-// ENCAPSULATION: Nine private fields; only donationCompleted has a setter
-//                because it is the only field that legitimately changes
-//                post-construction.
-//
-// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals.
-// ============================================================================
 class Donor : public IRecord
 {
 private:
@@ -851,15 +754,6 @@ public:
     }
 };
 
-// ============================================================================
-// CAMP CLASS
-//
-// INHERITANCE:   Extends IRecord.
-//
-// ENCAPSULATION: All four fields private; fully read-only after construction.
-//
-// POLYMORPHISM:  printRow() and toCSV() override IRecord's pure virtuals.
-// ============================================================================
 class Camp : public IRecord
 {
 private:
@@ -901,15 +795,6 @@ public:
     }
 };
 
-// ============================================================================
-// FILE REPOSITORY CLASS
-//
-// ENCAPSULATION: All raw file I/O is centralised here. No other class ever
-//                opens an ifstream or ofstream directly.
-//
-// ABSTRACTION:   Callers receive domain objects (User, Hospital, Donor, Camp,
-//                BloodReqRecord) — they never deal with raw file lines.
-// ============================================================================
 class FileRepository
 {
 public:
@@ -1196,17 +1081,6 @@ public:
     }
 };
 
-// ============================================================================
-// IMANAGER — ABSTRACT BASE CLASS (Interface for all manager/menu classes)
-//
-// ABSTRACTION:  Declares what every manager must expose — just showMenu().
-//               Application calls showMenu() without knowing the type.
-//
-// INHERITANCE:  DonorManager, CampManager, BloodRequestManager extend this.
-//
-// POLYMORPHISM: showMenu() is pure virtual — runtime dispatch selects the
-//               correct menu when called through an IManager pointer.
-// ============================================================================
 class IManager
 {
 public:
@@ -1215,26 +1089,14 @@ public:
 };
 
 // ============================================================================
-// ============================================================================
 //  SECTION 2 — OUTPUT CLASSES  (strictly in flow of output)
 //
 //  Flow:  IndexMain → Registration → Authentication → Menus →
 //         BloodRequest → DonationSystem → PatientInfo → Camp
 // ============================================================================
-// ============================================================================
-
-// ============================================================================
-// FORWARD DECLARATIONS
-// Required because Registration references Authentication and vice versa,
-// and AuthManager calls Application::userMenu()/hospMenu() which are defined
-// later (after the manager classes they depend on).
-// ============================================================================
 class RegistrationManager;
 class AuthManager;
 
-// Application is forward-declared with the two method signatures that
-// AuthManager needs to call.  The full class definition appears after all
-// manager classes it depends on.
 class Application
 {
 public:
@@ -1245,31 +1107,9 @@ public:
     static void displayUserHealthProfile();
 };
 
-// Free-function forward declarations used by RegistrationManager internals
 void userLogIn();
 void hospLogIn();
 
-// ============================================================================
-// [1] INDEX MAIN  —  Application::indexMain()
-//
-// The very first output the user sees.  The full Application class is defined
-// later (after all managers it depends on), but indexMain is logically first
-// in the flow so we document it here.
-//
-// Responsibilities: top-level banner, route to Registration or Login.
-// Defined fully inside Application class in the Menus section below.
-// ============================================================================
-
-// ============================================================================
-// [2] REGISTRATION  —  RegistrationManager
-//
-// ENCAPSULATION: Registration logic (validation, duplicate checks, saving)
-//                is bundled here; Application never touches file paths or
-//                validation patterns directly.
-//
-// ABSTRACTION:   registerUser() and registerHospital() are each one call
-//                from the outside, hiding looping, validation, and I/O.
-// ============================================================================
 class RegistrationManager
 {
 public:
@@ -1473,17 +1313,6 @@ public:
     }
 };
 
-// ============================================================================
-// [3] AUTHENTICATION  —  AuthManager
-//
-// ENCAPSULATION: Authentication logic (load users, compare credentials,
-//                set session) is bundled here. Application only calls
-//                userLogIn() / hospLogIn(); it never touches User or
-//                Hospital vectors directly.
-//
-// ABSTRACTION:   Full auth flow hidden; callers get a logged-in session
-//                or an error message — nothing more.
-// ============================================================================
 class AuthManager
 {
 public:
@@ -1665,20 +1494,9 @@ public:
     }
 };
 
-// Free functions route to AuthManager — needed by RegistrationManager
 void userLogIn() { AuthManager::userLogIn(); }
 void hospLogIn() { AuthManager::hospLogIn(); }
 
-// ============================================================================
-// [5] BLOOD REQUEST MANAGER
-//
-// INHERITANCE:   Extends IManager — must implement showMenu().
-//
-// ENCAPSULATION: BLOOD_REQ_FILE is private.
-//
-// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
-//                printRow() is called via IRecord interface inside loops.
-// ============================================================================
 class BloodRequestManager : public IManager
 {
 private:
@@ -1956,15 +1774,6 @@ public:
 };
 const string BloodRequestManager::BLOOD_REQ_FILE = "BloodReq.txt";
 
-// ============================================================================
-// [6] DONATION SYSTEM  —  DonorManager
-//
-// INHERITANCE:   Extends IManager — must implement showMenu().
-//
-// ENCAPSULATION: DONORS_FILE is private.
-//
-// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
-// ============================================================================
 class DonorManager : public IManager
 {
 private:
@@ -2222,15 +2031,6 @@ public:
 };
 const string DonorManager::DONORS_FILE = "donors.txt";
 
-// ============================================================================
-// [8] CAMP MANAGER
-//
-// INHERITANCE:   Extends IManager — must implement showMenu().
-//
-// ENCAPSULATION: CAMPS_FILE is private.
-//
-// POLYMORPHISM:  showMenu() overrides IManager::showMenu().
-// ============================================================================
 class CampManager : public IManager
 {
 private:
@@ -2311,17 +2111,6 @@ public:
 };
 const string CampManager::CAMPS_FILE = "camps.txt";
 
-// ============================================================================
-// [4] MENUS  +  [1] INDEX MAIN  —  Application  (method definitions)
-//
-// Defined here, after all manager classes they depend on, because
-// Application was forward-declared (with just method signatures) earlier
-// so AuthManager could reference Application::userMenu()/hospMenu().
-// ============================================================================
-
-// ------------------------------------------------------------------ [1]
-// INDEX MAIN — first output seen by the user
-// ABSTRACTION: entire program entry hidden; main() is just one call
 void Application::indexMain()
 {
     while (true)
@@ -2360,9 +2149,6 @@ void Application::indexMain()
     }
 }
 
-// ------------------------------------------------------------------ [3]
-// AUTHENTICATION GATEWAY — logInPage() routes to userLogIn / hospLogIn
-// ABSTRACTION: login-type selection hidden; callers just call logInPage()
 void Application::logInPage()
 {
     cout << endl;
@@ -2388,9 +2174,6 @@ void Application::logInPage()
     }
 }
 
-// ------------------------------------------------------------------ [4] USER MENU
-// ABSTRACTION: entire user session menu hidden behind one call
-// Includes: Blood Request → Patient Info → Camps
 void Application::userMenu()
 {
     while (true)
@@ -2444,8 +2227,6 @@ void Application::userMenu()
     }
 }
 
-// ------------------------------------------------------------------ [7] PATIENT INFO
-// ABSTRACTION + ENCAPSULATION: loads health data and displays for current user
 void Application::displayUserHealthProfile()
 {
     string username = CurrentUser::getUsername();
@@ -2469,9 +2250,6 @@ void Application::displayUserHealthProfile()
     cout << "Health profile not found for current user." << endl;
 }
 
-// ------------------------------------------------------------------ [4] HOSPITAL MENU
-// ABSTRACTION + POLYMORPHISM: hospMenu owns IManager objects and calls
-//   showMenu() — the correct override runs at runtime for each manager.
 void Application::hospMenu()
 {
     // POLYMORPHISM: concrete managers — showMenu() dispatches at runtime
