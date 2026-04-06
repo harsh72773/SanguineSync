@@ -53,6 +53,8 @@
 #include <iomanip>
 #include <cstring>
 #include <sstream>
+#include <chrono>
+#include <ctime>
 
 using namespace std;
 
@@ -119,6 +121,35 @@ public:
     static bool isValidDate(const string &date)
     {
         return regexMatch(date, "^\\d{2}/\\d{2}/\\d{4}$");
+    }
+
+    // ABSTRACTION: date parsing and age calculation hidden; callers get age in years
+    static int calculateAge(const string &birthDate)
+    {
+        // Parse DD/MM/YYYY format
+        int day = stoi(birthDate.substr(0, 2));
+        int month = stoi(birthDate.substr(3, 2));
+        int year = stoi(birthDate.substr(6, 4));
+
+        // Get current date
+        auto now = chrono::system_clock::now();
+        time_t now_time = chrono::system_clock::to_time_t(now);
+        tm *local_time = localtime(&now_time);
+
+        int currentYear = local_time->tm_year + 1900;
+        int currentMonth = local_time->tm_mon + 1;
+        int currentDay = local_time->tm_mday;
+
+        // Calculate age
+        int age = currentYear - year;
+        
+        // Adjust if birthday hasn't occurred yet this year
+        if (currentMonth < month || (currentMonth == month && currentDay < day))
+        {
+            age--;
+        }
+
+        return age;
     }
 
     // ABSTRACTION: manual find-and-slice loop hidden; callers get vector<string>
@@ -1208,7 +1239,9 @@ public:
 
             // Show calculated BMI before confirming
             HealthProfile hp(birthDate, weight, height);
-            cout << "\nBMI calculated: " << fixed << setprecision(1) << hp.getBMI()
+            int calculatedAge = Utils::calculateAge(birthDate);
+            cout << "\nCalculated Age: " << calculatedAge << " years" << endl;
+            cout << "BMI calculated: " << fixed << setprecision(1) << hp.getBMI()
                  << " (" << hp.getBMICategory() << ")" << endl;
             cout << "Donation Eligibility: "
                  << (hp.isEligibleForDonation() ? "ELIGIBLE" : "NOT ELIGIBLE") << endl;
@@ -1849,30 +1882,18 @@ public:
         getline(cin, bloodGroup);
         bloodGroup = Utils::trim(Utils::toUpper(bloodGroup));
 
+        // Calculate age from date of birth
+        age = Utils::calculateAge(dob);
+        cout << "Calculated Age: " << age << " years" << endl;
+        
         cout << "========================================" << endl;
         cout << "        HEALTH DECLARATION           " << endl;
         cout << "========================================" << endl;
 
-        while (true)
+        if (age < 18)
         {
-            cout << "Enter Age: ";
-            string ageStr;
-            getline(cin, ageStr);
-            ageStr = Utils::trim(ageStr);
-            try
-            {
-                age = stoi(ageStr);
-                if (age < 18)
-                {
-                    cout << "Not eligible (Age must be 18 or above)" << endl;
-                    return;
-                }
-                break;
-            }
-            catch (...)
-            {
-                cout << "Invalid age. Please enter a valid number." << endl;
-            }
+            cout << "Not eligible (Age must be 18 or above). Calculated age: " << age << " years" << endl;
+            return;
         }
 
         cout << "Any Serious Disease? (Yes/No): ";
