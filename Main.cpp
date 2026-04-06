@@ -117,10 +117,102 @@ public:
         }
     }
 
-    // ABSTRACTION: regex detail hidden; callers just check bool
+    // ABSTRACTION: comprehensive date validation including day/month ranges and leap years
     static bool isValidDate(const string &date)
     {
-        return regexMatch(date, "^\\d{2}/\\d{2}/\\d{4}$");
+        // First check format DD/MM/YYYY
+        if (!regexMatch(date, "^\\d{2}/\\d{2}/\\d{4}$"))
+            return false;
+
+        // Parse components
+        int day = stoi(date.substr(0, 2));
+        int month = stoi(date.substr(3, 2));
+        int year = stoi(date.substr(6, 4));
+
+        // Validate month range
+        if (month < 1 || month > 12)
+            return false;
+
+        // Validate day range based on month
+        int maxDays;
+        bool isLeapYear = false;
+        switch (month)
+        {
+            case 2: // February
+                // Check for leap year
+                isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+                maxDays = isLeapYear ? 29 : 28;
+                break;
+            case 4: case 6: case 9: case 11: // April, June, September, November
+                maxDays = 30;
+                break;
+            default: // January, March, May, July, August, October, December
+                maxDays = 31;
+                break;
+        }
+
+        if (day < 1 || day > maxDays)
+            return false;
+
+        // Validate year range (reasonable birth year range: 1900 to current year)
+        auto now = chrono::system_clock::now();
+        time_t now_time = chrono::system_clock::to_time_t(now);
+        tm *local_time = localtime(&now_time);
+        int currentYear = local_time->tm_year + 1900;
+
+        if (year < 1900 || year > currentYear)
+            return false;
+
+        return true;
+    }
+
+    // ABSTRACTION: camp date validation allowing future dates (for organizing camps)
+    static bool isValidCampDate(const string &date)
+    {
+        // First check format DD/MM/YYYY
+        if (!regexMatch(date, "^\\d{2}/\\d{2}/\\d{4}$"))
+            return false;
+
+        // Parse components
+        int day = stoi(date.substr(0, 2));
+        int month = stoi(date.substr(3, 2));
+        int year = stoi(date.substr(6, 4));
+
+        // Validate month range
+        if (month < 1 || month > 12)
+            return false;
+
+        // Validate day range based on month
+        int maxDays;
+        bool isLeapYear = false;
+        switch (month)
+        {
+            case 2: // February
+                // Check for leap year
+                isLeapYear = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+                maxDays = isLeapYear ? 29 : 28;
+                break;
+            case 4: case 6: case 9: case 11: // April, June, September, November
+                maxDays = 30;
+                break;
+            default: // January, March, May, July, August, October, December
+                maxDays = 31;
+                break;
+        }
+
+        if (day < 1 || day > maxDays)
+            return false;
+
+        // Validate year range (reasonable camp date range: current year to current year + 5)
+        auto now = chrono::system_clock::now();
+        time_t now_time = chrono::system_clock::to_time_t(now);
+        tm *local_time = localtime(&now_time);
+        int currentYear = local_time->tm_year + 1900;
+
+        if (year < currentYear || year > currentYear + 5)
+            return false;
+
+        return true;
     }
 
     // ABSTRACTION: date parsing and age calculation hidden; callers get age in years
@@ -1917,7 +2009,7 @@ public:
 
         if (age < 18)
         {
-            cout << "Not eligible (Age must be 18 or above). Calculated age: " << age << " years" << endl;
+            cout << "Not eligible (Age must be 18 or above). \nCalculated age: " << age << " years" << endl;
             return;
         }
 
@@ -2182,9 +2274,9 @@ public:
             cout << "Enter Date (DD/MM/YYYY): ";
             getline(cin, date);
             date = Utils::trim(date);
-            if (Utils::isValidDate(date))
+            if (Utils::isValidCampDate(date))
                 break;
-            cout << "Invalid date format. Please use DD/MM/YYYY format." << endl;
+            cout << "Invalid camp date. Please use DD/MM/YYYY format and ensure date is within next 5 years." << endl;
         }
         cout << "Enter Venue: ";
         getline(cin, venue);
