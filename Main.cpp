@@ -152,6 +152,31 @@ public:
         return age;
     }
 
+    // ABSTRACTION: date comparison logic hidden; callers get bool for past/future check
+    static bool isPastDate(const string &campDate)
+    {
+        // Parse DD/MM/YYYY format
+        int day = stoi(campDate.substr(0, 2));
+        int month = stoi(campDate.substr(3, 2));
+        int year = stoi(campDate.substr(6, 4));
+
+        // Get current date
+        auto now = chrono::system_clock::now();
+        time_t now_time = chrono::system_clock::to_time_t(now);
+        tm *local_time = localtime(&now_time);
+
+        int currentYear = local_time->tm_year + 1900;
+        int currentMonth = local_time->tm_mon + 1;
+        int currentDay = local_time->tm_mday;
+
+        // Compare dates
+        if (year < currentYear) return true;
+        if (year > currentYear) return false;
+        if (month < currentMonth) return true;
+        if (month > currentMonth) return false;
+        return day < currentDay;
+    }
+
     // ABSTRACTION: manual find-and-slice loop hidden; callers get vector<string>
     static vector<string> splitCSV(const string &line, int maxFields)
     {
@@ -2059,36 +2084,86 @@ private:
 
 public:
     // POLYMORPHISM: overrides IManager::showMenu()
-    // Delegates directly to viewOngoingCamps() for the hospital flow.
     void showMenu() override
     {
         viewOngoingCamps();
     }
 
-    // ABSTRACTION + POLYMORPHISM: calls Camp::printRow() via IRecord
+    // ABSTRACTION + POLYMORPHISM: separates and displays camps by date
     static void viewCamps()
     {
         auto camps = FileRepository::loadCamps(CAMPS_FILE);
 
-        cout << "========================================" << endl;
-        cout << "            AVAILABLE CAMPS              " << endl;
-        cout << "========================================" << endl;
-
         if (camps.empty())
         {
+            cout << "========================================" << endl;
+            cout << "            BLOOD CAMPS                " << endl;
+            cout << "========================================" << endl;
             cout << "No camps are currently available." << endl;
             return;
         }
 
-        cout << left << setw(5) << "NO."
-             << setw(25) << "CAMP NAME"
-             << setw(12) << "DATE"
-             << setw(20) << "VENUE"
-             << setw(15) << "CITY" << endl;
-        cout << string(77, '-') << endl;
+        // Separate camps into past and upcoming
+        vector<Camp> pastCamps;
+        vector<Camp> upcomingCamps;
 
-        for (size_t i = 0; i < camps.size(); i++)
-            camps[i].printRow(static_cast<int>(i + 1)); // POLYMORPHISM
+        for (const auto &camp : camps)
+        {
+            if (Utils::isPastDate(camp.getDate()))
+            {
+                pastCamps.push_back(camp);
+            }
+            else
+            {
+                upcomingCamps.push_back(camp);
+            }
+        }
+
+        // Display upcoming camps first
+        cout << "========================================" << endl;
+        cout << "           UPCOMING BLOOD CAMPS          " << endl;
+        cout << "========================================" << endl;
+
+        if (upcomingCamps.empty())
+        {
+            cout << "No upcoming blood camps scheduled." << endl;
+        }
+        else
+        {
+            cout << left << setw(5) << "NO."
+                 << setw(25) << "CAMP NAME"
+                 << setw(12) << "DATE"
+                 << setw(20) << "VENUE"
+                 << setw(15) << "CITY" << endl;
+            cout << string(77, '-') << endl;
+
+            for (size_t i = 0; i < upcomingCamps.size(); i++)
+                upcomingCamps[i].printRow(static_cast<int>(i + 1)); // POLYMORPHISM
+        }
+
+        cout << endl;
+
+        // Display past camps
+        cout << "========================================" << endl;
+        cout << "            COMPLETED CAMPS              " << endl;
+        cout << "========================================" << endl;
+
+        if (pastCamps.empty())
+        {
+            cout << "No completed blood camps." << endl;
+        }
+        else
+        {
+            cout << left << setw(5) << "NO."
+                 << setw(25) << "CAMP NAME"
+                 << setw(12) << "DATE"
+                 << setw(20) << "VENUE"
+                 << setw(15) << "CITY" << endl;
+            cout << string(77, '-') << endl;
+
+            for (size_t i = 0; i < pastCamps.size(); i++)
+                pastCamps[i].printRow(static_cast<int>(i + 1)); // POLYMORPHISM
+        }
     }
 
     // ABSTRACTION: input + object construction + save all hidden
