@@ -887,15 +887,17 @@ public:
     {
         return name + "," + email + "," + dob + "," + bloodGroup + "," +
                to_string(age) + "," + disease + "," +
-               (eligible ? "1" : "0") + "," + hospitalId;
+               (eligible ? "1" : "0") + "," + hospitalId + "," +
+               (donationCompleted ? "1" : "0");
     }
 
     // ABSTRACTION: CSV-to-object construction hidden; callers get a Donor
     static Donor createFromCSV(const vector<string> &parts)
     {
-        if (parts.size() == 8)
+        if (parts.size() >= 8)
             return Donor(parts[0], parts[1], parts[2], parts[3],
-                         stoi(parts[4]), parts[5], (parts[6] == "1"), parts[7], false);
+                         stoi(parts[4]), parts[5], (parts[6] == "1"), parts[7],
+                         parts.size() >= 9 && parts[8] == "1");
         return Donor("", "", "", "", 0, "", false, "", false);
     }
 };
@@ -1130,7 +1132,7 @@ public:
             line = Utils::trim(line);
             if (line.empty())
                 continue;
-            Donor d = Donor::createFromCSV(Utils::splitCSV(line, 8));
+            Donor d = Donor::createFromCSV(Utils::splitCSV(line, 9));
             if (!d.getName().empty())
                 donors.push_back(d);
         }
