@@ -1372,6 +1372,11 @@ public:
                 cout << "Registration cancelled." << endl;
                 continue;
             }
+            else if (confirm != "n" && confirm != "no")
+            {
+                cout << "Invalid input. Please enter 'y' or 'n'." << endl;
+                continue;
+            }
 
             if (FileRepository::aadharExists(aadharNo))
             {
