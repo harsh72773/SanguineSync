@@ -51,8 +51,6 @@
 #include <map>
 #include <limits>
 #include <iomanip>
-#include <cstring>
-#include <sstream>
 #include <chrono>
 #include <ctime>
 
@@ -823,15 +821,15 @@ public:
                 continue;
             }
             if (line.rfind("Username: ", 0) == 0)
-                u = Utils::trim(line.substr(strlen("Username: ")));
+                u = Utils::trim(line.substr(string("Username: ").length()));
             else if (line.rfind("Aadhaar No: ", 0) == 0)
-                a = Utils::trim(line.substr(strlen("Aadhaar No: ")));
+                a = Utils::trim(line.substr(string("Aadhaar No: ").length()));
             else if (line.rfind("Blood Group: ", 0) == 0)
-                b = Utils::trim(line.substr(strlen("Blood Group: ")));
+                b = Utils::trim(line.substr(string("Blood Group: ").length()));
             else if (line.rfind("Units Required: ", 0) == 0)
-                un = Utils::trim(line.substr(strlen("Units Required: ")));
+                un = Utils::trim(line.substr(string("Units Required: ").length()));
             else if (line.rfind("Status: ", 0) == 0)
-                st = Utils::trim(line.substr(strlen("Status: ")));
+                st = Utils::trim(line.substr(string("Status: ").length()));
         }
         pushIfValid();
         return list;
